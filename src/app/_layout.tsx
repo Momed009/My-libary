@@ -34,20 +34,15 @@ const AUTH_SKIPPED_KEY = 'auth_skipped';
 
 function AppContent() {
   const { colors, colorScheme, t, isReady: preferencesReady } = usePreferences();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, authSkipped, setAuthSkipped } = useAuth();
   const insets = useSafeAreaInsets();
   const [isReady, setIsReady] = useState(false);
-  const [authSkipped, setAuthSkipped] = useState<boolean | null>(null);
 
   useEffect(() => {
     async function setup() {
       try {
         await initDatabase();
         await initFileSystem();
-
-        // Check if user previously skipped auth
-        const skipped = await AsyncStorage.getItem(AUTH_SKIPPED_KEY);
-        setAuthSkipped(skipped === 'true');
         
         // Setup notifications only if the module loaded successfully
         if (Notifications) {
@@ -76,11 +71,10 @@ function AppContent() {
   }, []);
 
   const handleSkipAuth = async () => {
-    await AsyncStorage.setItem(AUTH_SKIPPED_KEY, 'true');
-    setAuthSkipped(true);
+    await setAuthSkipped(true);
   };
 
-  if (!isReady || !preferencesReady || authLoading || authSkipped === null) {
+  if (!isReady || !preferencesReady || authLoading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors?.background || '#ffffff' }}>
         <ActivityIndicator size="large" color="#0A84FF" />

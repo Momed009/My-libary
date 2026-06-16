@@ -29,6 +29,8 @@ import {
 import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
 import { usePreferences } from '@/context/PreferencesContext';
+import { useAuth } from '@/context/AuthContext';
+import { performFullSync } from '@/services/sync';
 import Constants from 'expo-constants';
 
 // Only load expo-notifications outside of Expo Go
@@ -46,6 +48,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function SettingsScreen() {
   const { theme, setTheme, language, setLanguage, colors, colorScheme, t } = usePreferences();
+  const { user, signOut, setAuthSkipped } = useAuth();
   
   const [loading, setLoading] = useState(false);
   const [loadingText, setLoadingText] = useState('');
@@ -330,6 +333,66 @@ export default function SettingsScreen() {
         }
       ]
     );
+  };
+
+  const handleCloudSync = async () => {
+    if (!user) {
+      Alert.alert(t('error') || 'Hata', 'Lütfen önce giriş yapın.');
+      return;
+    }
+
+    setLoading(true);
+    setLoadingText(language === 'tr' ? 'Veriler bulutla senkronize ediliyor...' : 'Syncing data with cloud...');
+    try {
+      const result = await performFullSync(user.id);
+      Alert.alert(
+        language === 'tr' ? 'Senkronizasyon Başarılı' : 'Sync Successful',
+        language === 'tr' 
+          ? `Verileriniz bulutla başarıyla eşitlendi.\nGönderilen: ${result.pushed} kayıt\nAlınan: ${result.pulled} kayıt`
+          : `Your data was synced successfully.\nPushed: ${result.pushed} records\nPulled: ${result.pulled} records`
+      );
+      // Refresh stats in case new books were pulled
+      await loadStats();
+    } catch (error: any) {
+      console.error('Sync error:', error);
+      Alert.alert(
+        language === 'tr' ? 'Senkronizasyon Hatası' : 'Sync Error',
+        language === 'tr'
+          ? `Eşitleme sırasında bir hata oluştu. Lütfen internet bağlantınızı ve veritabanı ayarlarınızı kontrol edin.\n\nHata: ${error.message || error}`
+          : `An error occurred during sync. Please check your connection and database setup.\n\nError: ${error.message || error}`
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    Alert.alert(
+      language === 'tr' ? 'Çıkış Yap' : 'Log Out',
+      language === 'tr' ? 'Hesabınızdan çıkış yapmak istediğinize emin misiniz?' : 'Are you sure you want to log out of your account?',
+      [
+        { text: language === 'tr' ? 'Vazgeç' : 'Cancel', style: 'cancel' },
+        { 
+          text: language === 'tr' ? 'Çıkış Yap' : 'Log Out', 
+          style: 'destructive',
+          onPress: async () => {
+            setLoading(true);
+            setLoadingText(language === 'tr' ? 'Çıkış yapılıyor...' : 'Logging out...');
+            try {
+              await signOut();
+            } catch (error) {
+              console.error('Logout error:', error);
+            } finally {
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleLoginRedirect = async () => {
+    await setAuthSkipped(false);
   };
 
   // Calculate read ratio
@@ -622,6 +685,119 @@ export default function SettingsScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
+          </>
+        )}
+      </View>
+
+      {/* Cloud Sync & Account Section */}
+      <Text style={[styles.sectionTitle, { color: colors.textSecondary, marginTop: 24 }]}>
+        {language === 'tr' ? 'BULUT SENKRONİZASYONU & HESAP' : 'CLOUD SYNC & ACCOUNT'}
+      </Text>
+      
+      <View style={[styles.optionsGroup, { backgroundColor: colors.backgroundElement }]}>
+        {user ? (
+          <>
+            {/* Account Info */}
+            <View style={styles.settingItem}>
+              <View style={styles.settingLabelRow}>
+                <View style={[styles.optionIconContainer, { backgroundColor: '#5856D6' }]}>
+                  <Ionicons name="person" size={20} color="#FFF" />
+                </View>
+                <View style={styles.optionTextContainer}>
+                  <Text style={[styles.optionTitle, { color: colors.text }]}>
+                    {language === 'tr' ? 'Oturum Açık' : 'Logged In'}
+                  </Text>
+                  <Text style={styles.optionDescription}>{user.email}</Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={[styles.separator, { backgroundColor: colorScheme === 'dark' ? '#38383A' : '#E5E5EA' }]} />
+
+            {/* Sync Now */}
+            <TouchableOpacity style={styles.optionItem} onPress={handleCloudSync} activeOpacity={0.7}>
+              <View style={styles.optionLabelRow}>
+                <View style={[styles.optionIconContainer, { backgroundColor: '#0A84FF' }]}>
+                  <Ionicons name="sync" size={20} color="#FFF" />
+                </View>
+                <View style={styles.optionTextContainer}>
+                  <Text style={[styles.optionTitle, { color: colors.text }]}>
+                    {language === 'tr' ? 'Şimdi Bulutla Eşitle' : 'Sync with Cloud Now'}
+                  </Text>
+                  <Text style={styles.optionDescription}>
+                    {language === 'tr' 
+                      ? 'Kitaplarınızı ve okuma durumlarınızı tüm cihazlarınızla eşitleyin.' 
+                      : 'Sync your library books and lending statuses across all devices.'}
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#8E8E93" />
+            </TouchableOpacity>
+
+            <View style={[styles.separator, { backgroundColor: colorScheme === 'dark' ? '#38383A' : '#E5E5EA' }]} />
+
+            {/* Logout */}
+            <TouchableOpacity style={styles.optionItem} onPress={handleLogout} activeOpacity={0.7}>
+              <View style={styles.optionLabelRow}>
+                <View style={[styles.optionIconContainer, { backgroundColor: '#FF453A' }]}>
+                  <Ionicons name="log-out" size={20} color="#FFF" />
+                </View>
+                <View style={styles.optionTextContainer}>
+                  <Text style={[styles.optionTitle, { color: '#FF453A' }]}>
+                    {language === 'tr' ? 'Hesaptan Çıkış Yap' : 'Log Out of Account'}
+                  </Text>
+                  <Text style={styles.optionDescription}>
+                    {language === 'tr' 
+                      ? 'Bu cihazdaki oturumunuzu kapatın.' 
+                      : 'Sign out of your account on this device.'}
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#8E8E93" />
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            {/* Logged Out / Skip State */}
+            <View style={styles.settingItem}>
+              <View style={styles.settingLabelRow}>
+                <View style={[styles.optionIconContainer, { backgroundColor: '#8E8E93' }]}>
+                  <Ionicons name="cloud-offline" size={20} color="#FFF" />
+                </View>
+                <View style={styles.optionTextContainer}>
+                  <Text style={[styles.optionTitle, { color: colors.text }]}>
+                    {language === 'tr' ? 'Bulut Eşitleme Kapalı' : 'Cloud Sync Disabled'}
+                  </Text>
+                  <Text style={styles.optionDescription}>
+                    {language === 'tr' 
+                      ? 'Kitaplarınızı bulutta saklamak ve diğer cihazlarınızla eşitlemek için oturum açın.' 
+                      : 'Log in to store your books in the cloud and sync with other devices.'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={[styles.separator, { backgroundColor: colorScheme === 'dark' ? '#38383A' : '#E5E5EA' }]} />
+
+            {/* Login / Register Button */}
+            <TouchableOpacity style={styles.optionItem} onPress={handleLoginRedirect} activeOpacity={0.7}>
+              <View style={styles.optionLabelRow}>
+                <View style={[styles.optionIconContainer, { backgroundColor: '#34C759' }]}>
+                  <Ionicons name="log-in" size={20} color="#FFF" />
+                </View>
+                <View style={styles.optionTextContainer}>
+                  <Text style={[styles.optionTitle, { color: colors.text }]}>
+                    {language === 'tr' ? 'Giriş Yap / Hesap Oluştur' : 'Log In / Create Account'}
+                  </Text>
+                  <Text style={styles.optionDescription}>
+                    {language === 'tr' 
+                      ? 'Kitaplığınızı bulut hesabınızla eşitlemek için oturum açın.' 
+                      : 'Sign in to sync your library with your cloud account.'}
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#8E8E93" />
+            </TouchableOpacity>
           </>
         )}
       </View>
