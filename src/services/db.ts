@@ -1,5 +1,14 @@
 import * as SQLite from 'expo-sqlite';
 
+// Generate a UUID v4 for sync
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export interface Book {
   id: number;
   title: string;
@@ -128,6 +137,38 @@ export async function initDatabase(): Promise<void> {
     await database.execAsync("ALTER TABLE books ADD COLUMN page_count INTEGER DEFAULT 0;");
   } catch {}
 
+  // Sync columns for books
+  try { await database.execAsync("ALTER TABLE books ADD COLUMN uuid TEXT;"); } catch {}
+  try { await database.execAsync("ALTER TABLE books ADD COLUMN updated_at TEXT;"); } catch {}
+  try { await database.execAsync("ALTER TABLE books ADD COLUMN synced INTEGER DEFAULT 0;"); } catch {}
+  try { await database.execAsync("ALTER TABLE books ADD COLUMN is_deleted INTEGER DEFAULT 0;"); } catch {}
+
+  // Sync columns for lendings
+  try { await database.execAsync("ALTER TABLE lendings ADD COLUMN uuid TEXT;"); } catch {}
+  try { await database.execAsync("ALTER TABLE lendings ADD COLUMN updated_at TEXT;"); } catch {}
+  try { await database.execAsync("ALTER TABLE lendings ADD COLUMN synced INTEGER DEFAULT 0;"); } catch {}
+  try { await database.execAsync("ALTER TABLE lendings ADD COLUMN is_deleted INTEGER DEFAULT 0;"); } catch {}
+
+  // Sync columns for book_quotes
+  try { await database.execAsync("ALTER TABLE book_quotes ADD COLUMN uuid TEXT;"); } catch {}
+  try { await database.execAsync("ALTER TABLE book_quotes ADD COLUMN updated_at TEXT;"); } catch {}
+  try { await database.execAsync("ALTER TABLE book_quotes ADD COLUMN synced INTEGER DEFAULT 0;"); } catch {}
+  try { await database.execAsync("ALTER TABLE book_quotes ADD COLUMN is_deleted INTEGER DEFAULT 0;"); } catch {}
+
+  // Backfill UUIDs for existing records that don't have one
+  const booksWithoutUuid = await database.getAllAsync<{ id: number }>('SELECT id FROM books WHERE uuid IS NULL');
+  for (const row of booksWithoutUuid) {
+    await database.runAsync('UPDATE books SET uuid = ?, updated_at = ? WHERE id = ?', generateUUID(), new Date().toISOString(), row.id);
+  }
+  const lendingsWithoutUuid = await database.getAllAsync<{ id: number }>('SELECT id FROM lendings WHERE uuid IS NULL');
+  for (const row of lendingsWithoutUuid) {
+    await database.runAsync('UPDATE lendings SET uuid = ?, updated_at = ? WHERE id = ?', generateUUID(), new Date().toISOString(), row.id);
+  }
+  const quotesWithoutUuid = await database.getAllAsync<{ id: number }>('SELECT id FROM book_quotes WHERE uuid IS NULL');
+  for (const row of quotesWithoutUuid) {
+    await database.runAsync('UPDATE book_quotes SET uuid = ?, updated_at = ? WHERE id = ?', generateUUID(), new Date().toISOString(), row.id);
+  }
+
   // 3. Create indexes for faster queries (dramatically reduces CPU for list operations)
   await database.execAsync(`
     CREATE INDEX IF NOT EXISTS idx_books_status ON books(status);
@@ -135,9 +176,12 @@ export async function initDatabase(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_books_category_id ON books(category_id);
     CREATE INDEX IF NOT EXISTS idx_books_isbn ON books(isbn);
     CREATE INDEX IF NOT EXISTS idx_books_title ON books(title);
+    CREATE INDEX IF NOT EXISTS idx_books_uuid ON books(uuid);
     CREATE INDEX IF NOT EXISTS idx_lendings_returned ON lendings(returned);
     CREATE INDEX IF NOT EXISTS idx_lendings_book_id ON lendings(book_id);
+    CREATE INDEX IF NOT EXISTS idx_lendings_uuid ON lendings(uuid);
     CREATE INDEX IF NOT EXISTS idx_book_quotes_book_id ON book_quotes(book_id);
+    CREATE INDEX IF NOT EXISTS idx_book_quotes_uuid ON book_quotes(uuid);
   `);
 
   // 4. Pre-populate default categories
@@ -177,16 +221,19 @@ export async function addBook(
 ): Promise<number> {
   const database = getDbConnection();
   const createdAt = new Date().toISOString();
+  const uuid = generateUUID();
   
   const result = await database.runAsync(
-    `INSERT INTO books (title, author, isbn, photo_path, created_at, status, favorite, category_id, page_count) VALUES (?, ?, ?, ?, ?, 'unread', 0, ?, ?)`,
+    `INSERT INTO books (title, author, isbn, photo_path, created_at, status, favorite, category_id, page_count, uuid, updated_at, synced, is_deleted) VALUES (?, ?, ?, ?, ?, 'unread', 0, ?, ?, ?, ?, 0, 0)`,
     title.trim(),
     author ? author.trim() : '',
     isbn ? isbn.trim() : '',
     photoPath || '',
     createdAt,
     categoryId,
-    pageCount
+    pageCount,
+    uuid,
+    createdAt
   );
   
   return result.lastInsertRowId;
@@ -203,25 +250,28 @@ export async function updateBook(
   photoPath: string | null
 ): Promise<void> {
   const database = getDbConnection();
+  const updatedAt = new Date().toISOString();
   await database.runAsync(
-    `UPDATE books SET title = ?, author = ?, isbn = ?, page_count = ?, category_id = ?, photo_path = ? WHERE id = ?`,
+    `UPDATE books SET title = ?, author = ?, isbn = ?, page_count = ?, category_id = ?, photo_path = ?, updated_at = ?, synced = 0 WHERE id = ?`,
     title.trim(),
     author ? author.trim() : '',
     isbn ? isbn.trim() : '',
     pageCount,
     categoryId,
     photoPath,
+    updatedAt,
     id
   );
 }
 
-// Get all books ordered by creation date (including category name)
+// Get all books ordered by creation date (including category name), excluding soft-deleted
 export async function getAllBooks(): Promise<Book[]> {
   const database = getDbConnection();
   return await database.getAllAsync<Book>(
     `SELECT b.*, c.name as category_name 
      FROM books b 
      LEFT JOIN categories c ON b.category_id = c.id 
+     WHERE b.is_deleted = 0 OR b.is_deleted IS NULL
      ORDER BY b.created_at DESC`
   );
 }
@@ -288,22 +338,26 @@ export async function checkBookByTitleAndAuthor(title: string, author: string): 
   );
 }
 
-// Delete a book
+// Soft-delete a book (mark as deleted for sync, then hard-delete locally)
 export async function deleteBook(id: number): Promise<void> {
   const database = getDbConnection();
-  await database.runAsync('DELETE FROM books WHERE id = ?', id);
+  const updatedAt = new Date().toISOString();
+  // Mark as deleted and unsynced so the delete propagates to cloud
+  await database.runAsync('UPDATE books SET is_deleted = 1, updated_at = ?, synced = 0 WHERE id = ?', updatedAt, id);
 }
 
 // Update reading status
 export async function updateBookReadingStatus(id: number, status: 'read' | 'reading' | 'unread'): Promise<void> {
   const database = getDbConnection();
-  await database.runAsync('UPDATE books SET status = ? WHERE id = ?', status, id);
+  const updatedAt = new Date().toISOString();
+  await database.runAsync('UPDATE books SET status = ?, updated_at = ?, synced = 0 WHERE id = ?', status, updatedAt, id);
 }
 
 // Update favorite status
 export async function updateBookFavoriteStatus(id: number, isFavorite: boolean): Promise<void> {
   const database = getDbConnection();
-  await database.runAsync('UPDATE books SET favorite = ? WHERE id = ?', isFavorite ? 1 : 0, id);
+  const updatedAt = new Date().toISOString();
+  await database.runAsync('UPDATE books SET favorite = ?, updated_at = ?, synced = 0 WHERE id = ?', isFavorite ? 1 : 0, updatedAt, id);
 }
 
 // Associate book to category
@@ -378,14 +432,17 @@ export async function addLending(
 ): Promise<number> {
   const database = getDbConnection();
   const borrowDate = new Date().toISOString();
+  const uuid = generateUUID();
   
   const result = await database.runAsync(
-    `INSERT INTO lendings (book_id, borrower_name, borrow_date, return_date, returned, calendar_event_id) VALUES (?, ?, ?, ?, 0, ?)`,
+    `INSERT INTO lendings (book_id, borrower_name, borrow_date, return_date, returned, calendar_event_id, uuid, updated_at, synced, is_deleted) VALUES (?, ?, ?, ?, 0, ?, ?, ?, 0, 0)`,
     bookId,
     borrowerName.trim(),
     borrowDate,
     returnDate,
-    calendarEventId
+    calendarEventId,
+    uuid,
+    borrowDate
   );
   
   return result.lastInsertRowId;
@@ -411,7 +468,8 @@ export async function returnLending(id: number): Promise<string | null> {
     id
   );
   
-  await database.runAsync('UPDATE lendings SET returned = 1 WHERE id = ?', id);
+  const updatedAt = new Date().toISOString();
+  await database.runAsync('UPDATE lendings SET returned = 1, updated_at = ?, synced = 0 WHERE id = ?', updatedAt, id);
   
   return lending ? lending.calendar_event_id : null;
 }
@@ -496,12 +554,15 @@ export async function addBookQuote(
 ): Promise<number> {
   const database = getDbConnection();
   const createdAt = new Date().toISOString();
+  const uuid = generateUUID();
   const result = await database.runAsync(
-    'INSERT INTO book_quotes (book_id, content, page, color_index, created_at) VALUES (?, ?, ?, ?, ?)',
+    'INSERT INTO book_quotes (book_id, content, page, color_index, created_at, uuid, updated_at, synced, is_deleted) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0)',
     bookId,
     content.trim(),
     page,
     colorIndex,
+    createdAt,
+    uuid,
     createdAt
   );
   return result.lastInsertRowId;
@@ -509,7 +570,8 @@ export async function addBookQuote(
 
 export async function deleteBookQuote(id: number): Promise<void> {
   const database = getDbConnection();
-  await database.runAsync('DELETE FROM book_quotes WHERE id = ?', id);
+  const updatedAt = new Date().toISOString();
+  await database.runAsync('UPDATE book_quotes SET is_deleted = 1, updated_at = ?, synced = 0 WHERE id = ?', updatedAt, id);
 }
 
 export async function getBookQuotes(bookId: number): Promise<BookQuote[]> {

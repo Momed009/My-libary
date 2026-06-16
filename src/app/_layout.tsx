@@ -5,9 +5,12 @@ import { initDatabase } from '@/services/db';
 import { initFileSystem } from '@/services/fs';
 import { Ionicons } from '@expo/vector-icons';
 import { PreferencesProvider, usePreferences } from '@/context/PreferencesContext';
+import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import AuthScreen from './auth';
 
 // Only load expo-notifications outside of Expo Go
 let Notifications: typeof import('expo-notifications') | null = null;
@@ -27,16 +30,24 @@ if (!isExpoGo) {
   }
 }
 
-function TabLayoutContent() {
+const AUTH_SKIPPED_KEY = 'auth_skipped';
+
+function AppContent() {
   const { colors, colorScheme, t, isReady: preferencesReady } = usePreferences();
+  const { user, isLoading: authLoading } = useAuth();
   const insets = useSafeAreaInsets();
   const [isReady, setIsReady] = useState(false);
+  const [authSkipped, setAuthSkipped] = useState<boolean | null>(null);
 
   useEffect(() => {
     async function setup() {
       try {
         await initDatabase();
         await initFileSystem();
+
+        // Check if user previously skipped auth
+        const skipped = await AsyncStorage.getItem(AUTH_SKIPPED_KEY);
+        setAuthSkipped(skipped === 'true');
         
         // Setup notifications only if the module loaded successfully
         if (Notifications) {
@@ -64,12 +75,22 @@ function TabLayoutContent() {
     setup();
   }, []);
 
-  if (!isReady || !preferencesReady) {
+  const handleSkipAuth = async () => {
+    await AsyncStorage.setItem(AUTH_SKIPPED_KEY, 'true');
+    setAuthSkipped(true);
+  };
+
+  if (!isReady || !preferencesReady || authLoading || authSkipped === null) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors?.background || '#ffffff' }}>
         <ActivityIndicator size="large" color="#0A84FF" />
       </View>
     );
+  }
+
+  // Show auth screen if user is not logged in AND hasn't skipped
+  if (!user && !authSkipped) {
+    return <AuthScreen onSkip={handleSkipAuth} />;
   }
 
   return (
@@ -154,6 +175,12 @@ function TabLayoutContent() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="auth"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }
@@ -163,10 +190,11 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <PreferencesProvider>
-          <TabLayoutContent />
+          <AuthProvider>
+            <AppContent />
+          </AuthProvider>
         </PreferencesProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
-
