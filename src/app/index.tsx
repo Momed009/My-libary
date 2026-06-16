@@ -13,7 +13,8 @@ import {
   Modal,
   Dimensions,
   ScrollView,
-  InteractionManager
+  InteractionManager,
+  Platform
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
