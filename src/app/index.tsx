@@ -334,22 +334,56 @@ export default function HomeScreen() {
       [
         {
           text: t('edit_cover_take_photo'),
-          onPress: async () => {
-            const { status } = await ImagePicker.requestCameraPermissionsAsync();
-            if (status === 'granted') {
-              const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [3, 4], quality: 0.6, mediaTypes: ['images'], ...(Platform.OS === 'android' && { presentationStyle: ImagePicker.UIImagePickerPresentationStyle.FULL_SCREEN }) });
-              if (!result.canceled && result.assets) setEditPhotoUri(result.assets[0].uri);
-            }
+          onPress: () => {
+            setTimeout(async () => {
+              try {
+                const { status } = await ImagePicker.requestCameraPermissionsAsync();
+                if (status !== 'granted') {
+                  Alert.alert(t('warning'), t('scanner_permission_req'));
+                  return;
+                }
+                const result = await ImagePicker.launchCameraAsync({
+                  allowsEditing: true,
+                  aspect: [3, 4],
+                  quality: 0.6,
+                  mediaTypes: ['images'],
+                  ...(Platform.OS === 'android' && { presentationStyle: ImagePicker.UIImagePickerPresentationStyle.FULL_SCREEN })
+                });
+                if (!result.canceled && result.assets && result.assets.length > 0) {
+                  setEditPhotoUri(result.assets[0].uri);
+                }
+              } catch (error) {
+                console.error('Error launching camera:', error);
+                Alert.alert(t('error'), 'Kamera açılırken bir hata oluştu.');
+              }
+            }, 200);
           }
         },
         {
           text: t('edit_cover_choose_gallery'),
-          onPress: async () => {
-            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-            if (status === 'granted') {
-              const result = await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [3, 4], quality: 0.6, mediaTypes: ['images'], ...(Platform.OS === 'android' && { presentationStyle: ImagePicker.UIImagePickerPresentationStyle.FULL_SCREEN }) });
-              if (!result.canceled && result.assets) setEditPhotoUri(result.assets[0].uri);
-            }
+          onPress: () => {
+            setTimeout(async () => {
+              try {
+                const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                if (status !== 'granted') {
+                  Alert.alert(t('warning'), t('scanner_permission_req'));
+                  return;
+                }
+                const result = await ImagePicker.launchImageLibraryAsync({
+                  allowsEditing: true,
+                  aspect: [3, 4],
+                  quality: 0.6,
+                  mediaTypes: ['images'],
+                  ...(Platform.OS === 'android' && { presentationStyle: ImagePicker.UIImagePickerPresentationStyle.FULL_SCREEN })
+                });
+                if (!result.canceled && result.assets && result.assets.length > 0) {
+                  setEditPhotoUri(result.assets[0].uri);
+                }
+              } catch (error) {
+                console.error('Error launching gallery:', error);
+                Alert.alert(t('error'), 'Galeri açılırken bir hata oluştu.');
+              }
+            }, 200);
           }
         },
         { text: t('edit_cover_remove'), style: 'destructive', onPress: () => setEditPhotoUri(null) },
