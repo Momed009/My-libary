@@ -1,16 +1,18 @@
 {
   "expo": {
-    "name": "temp-app",
-    "slug": "temp-app",
+    "name": "Kütüphanem",
+    "slug": "kutuphanem",
+    "owner": "momed009",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "tempapp",
+    "scheme": "kutuphanem",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"
     },
     "android": {
+      "package": "com.kiler.kutuphanem",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -34,11 +36,45 @@
             "imageWidth": 76
           }
         }
-      ]
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Barkod taramak için kameraya izin verin."
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Kitap teslim tarihi hatırlatmaları eklemek için takvime izin verin."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Kitap kapak fotoğrafı seçmek için galeriye izin verin."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 24,
+            "targetSdkVersion": 34
+          }
+        }
+      ],
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "f3432d0a-1fd1-4063-9c44-2a6a84814ee4"
+      }
     }
   }
 }
