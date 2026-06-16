@@ -55,15 +55,34 @@ async function resolveCategoryId(apiCategories: string[] | undefined): Promise<n
   return await findCategoryIdByName(mappedCategoryName);
 }
 
+// Fetch with timeout helper using AbortController to prevent long network hangs
+async function fetchWithTimeout(url: string, options: RequestInit & { timeout?: number } = {}): Promise<Response> {
+  const { timeout = 5000, ...rest } = options;
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(url, {
+      ...rest,
+      signal: controller.signal,
+    });
+    clearTimeout(id);
+    return response;
+  } catch (error) {
+    clearTimeout(id);
+    throw error;
+  }
+}
+
 // Fetch book metadata from Google Books or Open Library APIs
 export async function fetchBookInfoByIsbn(isbn: string): Promise<BookApiInfo | null> {
   const cleanIsbn = isbn.replace(/[-\s]/g, '');
   if (!cleanIsbn) return null;
 
   try {
-    // 1. Try Google Books API
-    const googleResponse = await fetch(
-      `https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanIsbn}`
+    // 1. Try Google Books API (Timeout: 5 seconds)
+    const googleResponse = await fetchWithTimeout(
+      `https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanIsbn}`,
+      { timeout: 5000 }
     );
     if (googleResponse.ok) {
       const data = await googleResponse.json();
@@ -74,11 +93,12 @@ export async function fetchBookInfoByIsbn(isbn: string): Promise<BookApiInfo | n
         const author = volumeInfo.authors ? volumeInfo.authors.join(', ') : '';
         const pageCount = volumeInfo.pageCount || 0;
 
-        // Try to get high-res cover from volume-specific endpoint
+        // Try to get high-res cover from volume-specific endpoint (Timeout: 3.5 seconds)
         let photoUrl: string | undefined = undefined;
         try {
-          const volumeResponse = await fetch(
-            `https://www.googleapis.com/books/v1/volumes/${volumeId}`
+          const volumeResponse = await fetchWithTimeout(
+            `https://www.googleapis.com/books/v1/volumes/${volumeId}`,
+            { timeout: 3500 }
           );
           if (volumeResponse.ok) {
             const volumeData = await volumeResponse.json();
@@ -105,11 +125,11 @@ export async function fetchBookInfoByIsbn(isbn: string): Promise<BookApiInfo | n
           }
         }
 
-        // If still no cover, try Open Library direct cover URL
+        // If still no cover, try Open Library direct cover URL (Timeout: 2.5 seconds)
         if (!photoUrl) {
           const olCoverUrl = `https://covers.openlibrary.org/b/isbn/${cleanIsbn}-L.jpg?default=false`;
           try {
-            const olCheck = await fetch(olCoverUrl, { method: 'HEAD' });
+            const olCheck = await fetchWithTimeout(olCoverUrl, { method: 'HEAD', timeout: 2500 });
             if (olCheck.ok) {
               photoUrl = olCoverUrl;
             }
@@ -135,9 +155,10 @@ export async function fetchBookInfoByIsbn(isbn: string): Promise<BookApiInfo | n
   }
 
   try {
-    // 2. Try Open Library API as a fallback
-    const openLibraryResponse = await fetch(
-      `https://openlibrary.org/api/books?bibkeys=ISBN:${cleanIsbn}&format=json&jscmd=data`
+    // 2. Try Open Library API as a fallback (Timeout: 5 seconds)
+    const openLibraryResponse = await fetchWithTimeout(
+      `https://openlibrary.org/api/books?bibkeys=ISBN:${cleanIsbn}&format=json&jscmd=data`,
+      { timeout: 5000 }
     );
     if (openLibraryResponse.ok) {
       const data = await openLibraryResponse.json();
@@ -170,13 +191,22 @@ export async function fetchBookInfoByIsbn(isbn: string): Promise<BookApiInfo | n
   return null;
 }
 
-// Download external cover image and save it locally
+// Download external cover image and save it locally (Timeout: 6 seconds)
 export async function downloadAndSaveCoverImage(url: string): Promise<string | null> {
   try {
     const extension = url.split('.').pop()?.split('?')[0] || 'jpg';
     const tempPath = `${FileSystem.cacheDirectory}temp_download_${Date.now()}.${extension}`;
     
-    const downloadResult = await FileSystem.downloadAsync(url, tempPath);
+    // 6-second timeout for image download to prevent hanging on slow CDNs
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Image download timeout')), 6000)
+    );
+    
+    const downloadResult = await Promise.race([
+      FileSystem.downloadAsync(url, tempPath),
+      timeoutPromise
+    ]);
+    
     if (downloadResult.status !== 200) {
       return null;
     }
