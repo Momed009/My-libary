@@ -4,22 +4,32 @@ import { ActivityIndicator, View, Platform } from 'react-native';
 import { initDatabase } from '@/services/db';
 import { initFileSystem } from '@/services/fs';
 import { Ionicons } from '@expo/vector-icons';
-import * as Notifications from 'expo-notifications';
 import { PreferencesProvider, usePreferences } from '@/context/PreferencesContext';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 
-// Setup background notification handler
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  } as any),
-});
+// Only load expo-notifications outside of Expo Go
+let Notifications: typeof import('expo-notifications') | null = null;
+const isExpoGo = Constants.appOwnership === 'expo';
+if (!isExpoGo) {
+  try {
+    Notifications = require('expo-notifications');
+    Notifications?.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      } as any),
+    });
+  } catch (e) {
+    console.warn('expo-notifications not available:', e);
+  }
+}
 
 function TabLayoutContent() {
   const { colors, colorScheme, t, isReady: preferencesReady } = usePreferences();
+  const insets = useSafeAreaInsets();
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
@@ -28,17 +38,22 @@ function TabLayoutContent() {
         await initDatabase();
         await initFileSystem();
         
-        // Request notifications permissions on boot
-        await Notifications.requestPermissionsAsync();
+        // Setup notifications only if the module loaded successfully
+        if (Notifications) {
+          try {
+            await Notifications.requestPermissionsAsync();
 
-        // Setup Android high priority channel
-        if (Platform.OS === 'android') {
-          await Notifications.setNotificationChannelAsync('default', {
-            name: 'default',
-            importance: Notifications.AndroidImportance.MAX,
-            vibrationPattern: [0, 250, 250, 250],
-            lightColor: '#FF231F7C',
-          });
+            if (Platform.OS === 'android') {
+              await Notifications.setNotificationChannelAsync('default', {
+                name: 'default',
+                importance: Notifications.AndroidImportance.MAX,
+                vibrationPattern: [0, 250, 250, 250],
+                lightColor: '#FF231F7C',
+              });
+            }
+          } catch (notifError) {
+            console.warn('Notifications setup failed:', notifError);
+          }
         }
       } catch (error) {
         console.error('Error initializing app:', error);
@@ -66,8 +81,8 @@ function TabLayoutContent() {
           backgroundColor: colors.background,
           borderTopWidth: 0,
           borderTopColor: 'transparent',
-          height: 58,
-          paddingBottom: 10,
+          height: 58 + insets.bottom,
+          paddingBottom: 10 + insets.bottom,
           paddingTop: 0,
           elevation: 0,
           shadowColor: 'transparent',

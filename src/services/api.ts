@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { saveBookCover } from './fs';
 import { findCategoryIdByName } from './db';
 
@@ -69,13 +69,53 @@ export async function fetchBookInfoByIsbn(isbn: string): Promise<BookApiInfo | n
       const data = await googleResponse.json();
       if (data.items && data.items.length > 0) {
         const volumeInfo = data.items[0].volumeInfo;
+        const volumeId = data.items[0].id;
         const title = volumeInfo.title || '';
         const author = volumeInfo.authors ? volumeInfo.authors.join(', ') : '';
         const pageCount = volumeInfo.pageCount || 0;
-        let photoUrl = volumeInfo.imageLinks?.thumbnail || volumeInfo.imageLinks?.smallThumbnail || undefined;
-        
-        if (photoUrl && photoUrl.startsWith('http://')) {
-          photoUrl = photoUrl.replace('http://', 'https://');
+
+        // Try to get high-res cover from volume-specific endpoint
+        let photoUrl: string | undefined = undefined;
+        try {
+          const volumeResponse = await fetch(
+            `https://www.googleapis.com/books/v1/volumes/${volumeId}`
+          );
+          if (volumeResponse.ok) {
+            const volumeData = await volumeResponse.json();
+            const imgs = volumeData.volumeInfo?.imageLinks;
+            if (imgs) {
+              photoUrl = imgs.extraLarge || imgs.large || imgs.medium || imgs.small || imgs.thumbnail || imgs.smallThumbnail;
+            }
+          }
+        } catch (e) {
+          console.warn('Volume detail fetch failed, using search result thumbnail:', e);
+        }
+
+        // Fallback to search result thumbnails
+        if (!photoUrl) {
+          photoUrl = volumeInfo.imageLinks?.thumbnail || volumeInfo.imageLinks?.smallThumbnail || undefined;
+        }
+
+        // Enhance thumbnail URL for better quality
+        if (photoUrl) {
+          photoUrl = photoUrl.replace('zoom=1', 'zoom=0');
+          photoUrl = photoUrl.replace('&edge=curl', '');
+          if (photoUrl.startsWith('http://')) {
+            photoUrl = photoUrl.replace('http://', 'https://');
+          }
+        }
+
+        // If still no cover, try Open Library direct cover URL
+        if (!photoUrl) {
+          const olCoverUrl = `https://covers.openlibrary.org/b/isbn/${cleanIsbn}-L.jpg?default=false`;
+          try {
+            const olCheck = await fetch(olCoverUrl, { method: 'HEAD' });
+            if (olCheck.ok) {
+              photoUrl = olCoverUrl;
+            }
+          } catch (e) {
+            console.warn('Open Library cover check failed:', e);
+          }
         }
 
         const categoryId = await resolveCategoryId(volumeInfo.categories);

@@ -79,10 +79,11 @@ export default function AddBookScreen() {
     }
 
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [3, 4],
       quality: 0.6,
+      ...(Platform.OS === 'android' && { presentationStyle: ImagePicker.UIImagePickerPresentationStyle.FULL_SCREEN }),
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
@@ -99,10 +100,11 @@ export default function AddBookScreen() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [3, 4],
       quality: 0.6,
+      ...(Platform.OS === 'android' && { presentationStyle: ImagePicker.UIImagePickerPresentationStyle.FULL_SCREEN }),
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {

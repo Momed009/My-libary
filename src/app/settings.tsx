@@ -26,10 +26,21 @@ import {
   getSetting,
   setSetting
 } from '@/services/db';
-import * as Notifications from 'expo-notifications';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
 import { usePreferences } from '@/context/PreferencesContext';
+import Constants from 'expo-constants';
+
+// Only load expo-notifications outside of Expo Go
+let Notifications: typeof import('expo-notifications') | null = null;
+const isExpoGo = Constants.appOwnership === 'expo';
+if (!isExpoGo) {
+  try {
+    Notifications = require('expo-notifications');
+  } catch (e) {
+    console.warn('expo-notifications not available:', e);
+  }
+}
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -159,6 +170,10 @@ export default function SettingsScreen() {
   };
 
   const setupNotifications = async (enabled: boolean, hour: number, minute: number) => {
+    if (!Notifications) {
+      console.warn('Notifications not available in Expo Go');
+      return;
+    }
     try {
       await Notifications.cancelAllScheduledNotificationsAsync();
       if (enabled) {

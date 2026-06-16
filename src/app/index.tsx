@@ -337,7 +337,7 @@ export default function HomeScreen() {
           onPress: async () => {
             const { status } = await ImagePicker.requestCameraPermissionsAsync();
             if (status === 'granted') {
-              const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [3, 4], quality: 0.6 });
+              const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [3, 4], quality: 0.6, mediaTypes: ['images'], ...(Platform.OS === 'android' && { presentationStyle: ImagePicker.UIImagePickerPresentationStyle.FULL_SCREEN }) });
               if (!result.canceled && result.assets) setEditPhotoUri(result.assets[0].uri);
             }
           }
@@ -347,7 +347,7 @@ export default function HomeScreen() {
           onPress: async () => {
             const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (status === 'granted') {
-              const result = await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [3, 4], quality: 0.6 });
+              const result = await ImagePicker.launchImageLibraryAsync({ allowsEditing: true, aspect: [3, 4], quality: 0.6, mediaTypes: ['images'], ...(Platform.OS === 'android' && { presentationStyle: ImagePicker.UIImagePickerPresentationStyle.FULL_SCREEN }) });
               if (!result.canceled && result.assets) setEditPhotoUri(result.assets[0].uri);
             }
           }
