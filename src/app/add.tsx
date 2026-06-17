@@ -14,7 +14,7 @@ import {
   FlatList,
   Modal
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { addBook, checkBookByIsbn, checkBookByTitleAndAuthor, getAllCategories, Category } from '@/services/db';
 import { saveBookCover } from '@/services/fs';
@@ -66,9 +66,11 @@ export default function AddBookScreen() {
   };
 
   const categoryIdParam = params?.categoryId;
-  useEffect(() => {
-    loadCategories();
-  }, [categoryIdParam]);
+  useFocusEffect(
+    useCallback(() => {
+      loadCategories();
+    }, [categoryIdParam])
+  );
 
   // Open native camera to take a cover photo
   const handleTakePhoto = async () => {

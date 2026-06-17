@@ -52,7 +52,15 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Kitap kapak fotoğrafı seçmek için galeriye izin verin."
+          "photosPermission": "Kitap kapak fotoğrafı seçmek için galeriye izin verin.",
+          "colors": {
+            "cropToolbarColor": "#0A84FF"
+          },
+          "dark": {
+            "colors": {
+              "cropToolbarColor": "#1C1C1E"
+            }
+          }
         }
       ],
       [
