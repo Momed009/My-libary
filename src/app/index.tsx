@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -13,7 +13,6 @@ import {
   Modal,
   Dimensions,
   ScrollView,
-  InteractionManager,
   Platform
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -60,6 +59,14 @@ export default function HomeScreen() {
   const router = useRouter();
   const tabBarHeight = 58;
 
+  // Timer cleanup refs
+  const timerRefs = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => {
+    return () => {
+      timerRefs.current.forEach(clearTimeout);
+    };
+  }, []);
+
   // Data states
   const [books, setBooks] = useState<Book[]>([]);
 
@@ -101,7 +108,7 @@ export default function HomeScreen() {
 
   const closeDetailModal = useCallback(() => {
     setDetailModalVisible(false);
-    setTimeout(() => {
+    const id = setTimeout(() => {
       setSelectedBook(null);
       setQuotes([]);
       setNewQuoteText('');
@@ -109,6 +116,7 @@ export default function HomeScreen() {
       setSelectedColorIndex(0);
       setActiveDetailTab('details');
     }, 400);
+    timerRefs.current.push(id);
   }, []);
 
   const loadQuotes = async (bookId: number) => {
@@ -322,9 +330,10 @@ export default function HomeScreen() {
     // Close details modal first to avoid nested modals on iOS
     setDetailModalVisible(false);
     
-    setTimeout(() => {
+    const id = setTimeout(() => {
       setEditModalVisible(true);
     }, 400);
+    timerRefs.current.push(id);
   };
 
   // Handle image pick/take for editing
@@ -447,9 +456,10 @@ export default function HomeScreen() {
       setEditModalVisible(false);
       
       // Open details modal back
-      setTimeout(() => {
+      const id = setTimeout(() => {
         setDetailModalVisible(true);
       }, 400);
+      timerRefs.current.push(id);
       
       loadBooks();
       Alert.alert(t('success'), t('edit_success'));
@@ -468,7 +478,7 @@ export default function HomeScreen() {
   const formatRecordDate = useCallback((dateString: string) => {
     try {
       const date = new Date(dateString);
-      return date.toLocaleDateString(language === 'tr' ? 'tr-TR' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+      return date.toLocaleDateString(language === 'tr' ? 'tr-TR' : language === 'ar' ? 'ar-EG' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' });
     } catch {
       return dateString;
     }
@@ -527,7 +537,7 @@ export default function HomeScreen() {
 
             {/* Page Count */}
             {item.page_count > 0 ? (
-              <Text style={styles.pagesText}>{item.page_count} {language === 'tr' ? 'sf' : 'p'}</Text>
+              <Text style={styles.pagesText}>{item.page_count} {language === 'tr' ? 'sf' : language === 'ar' ? 'ص' : 'p'}</Text>
             ) : null}
           </View>
         </View>
@@ -562,13 +572,15 @@ export default function HomeScreen() {
               <View style={styles.progressTitleRow}>
                 <Ionicons name="trophy-outline" size={16} color="#FFD60A" style={{ marginRight: 6 }} />
                 <Text style={[styles.progressTitle, { color: colors.text }]}>
-                  {language === 'tr' ? 'Okuma Yolculuğun' : 'Reading Journey'}
+                  {language === 'tr' ? 'Okuma Yolculuğun' : language === 'ar' ? 'رحلة قراءتك' : 'Reading Journey'}
                 </Text>
               </View>
               
               <Text style={[styles.progressSubtext, { color: colors.textSecondary, marginTop: 4 }]}>
                 {language === 'tr' 
                   ? `${totalBooksCount} kitaptan ${readBooksCount} tanesini okudun.` 
+                  : language === 'ar'
+                  ? `لقد قرأت ${readBooksCount} من أصل ${totalBooksCount} كتب.`
                   : `You've read ${readBooksCount} out of ${totalBooksCount} books.`
                 }
               </Text>
@@ -586,7 +598,7 @@ export default function HomeScreen() {
                 />
               </View>
               <Text style={[styles.progressPercentText, { color: '#0A84FF', fontSize: 11, marginTop: 4, fontWeight: '600' }]}>
-                {language === 'tr' ? `Genel Okuma Oranı: %${progressRatio}` : `Library read ratio: ${progressRatio}%`}
+                {language === 'tr' ? `Genel Okuma Oranı: %${progressRatio}` : language === 'ar' ? `معدل القراءة العام: ${progressRatio}%` : `Library read ratio: ${progressRatio}%`}
               </Text>
             </View>
 
@@ -980,7 +992,7 @@ export default function HomeScreen() {
                               <Text style={styles.quoteCardText}>“{quote.content}”</Text>
                               {quote.page && (
                                 <Text style={styles.quoteCardPage}>
-                                  {language === 'tr' ? `Sayfa ${quote.page}` : `Page ${quote.page}`}
+                                  {language === 'tr' ? `Sayfa ${quote.page}` : language === 'ar' ? `صفحة ${quote.page}` : `Page ${quote.page}`}
                                 </Text>
                               )}
                             </View>
@@ -1006,9 +1018,10 @@ export default function HomeScreen() {
             setCategorySelectorVisible(false);
           } else {
             setEditModalVisible(false);
-            setTimeout(() => {
+            const id2 = setTimeout(() => {
               setDetailModalVisible(true);
             }, 400);
+            timerRefs.current.push(id2);
           }
         }}
       >
@@ -1169,9 +1182,10 @@ export default function HomeScreen() {
                     style={[styles.btnCancel, { borderColor: colorScheme === 'dark' ? '#38383A' : '#D1D1D6' }]}
                     onPress={() => {
                       setEditModalVisible(false);
-                      setTimeout(() => {
+                      const id3 = setTimeout(() => {
                         setDetailModalVisible(true);
                       }, 400);
+                      timerRefs.current.push(id3);
                     }}
                   >
                     <Text style={[styles.btnCancelText, { color: colors.text }]}>{t('cancel')}</Text>
@@ -1268,13 +1282,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: '#E5E5EA',
   },
-  placeholderCover: {
-    width: 44,
-    height: 60,
-    borderRadius: 6,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+
   bookInfo: {
     flex: 1,
     marginLeft: 12,
@@ -1840,10 +1848,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.08)',
   },
-  selectedColorCircle: {
-    borderWidth: 1.5,
-    borderColor: '#333',
-  },
+
   addQuoteBtn: {
     height: 40,
     borderRadius: 10,

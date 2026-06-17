@@ -9,7 +9,8 @@
     "scheme": "kutuphanem",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/icon.png",
+      "bundleIdentifier": "com.kiler.kutuphanem"
     },
     "android": {
       "package": "com.kiler.kutuphanem",
@@ -54,7 +55,7 @@
         {
           "photosPermission": "Kitap kapak fotoğrafı seçmek için galeriye izin verin.",
           "colors": {
-            "cropToolbarColor": "#0A84FF"
+            "cropToolbarColor": "#1C1C1E"
           },
           "dark": {
             "colors": {
@@ -68,11 +69,18 @@
         {
           "android": {
             "minSdkVersion": 24,
-            "targetSdkVersion": 34
+            "targetSdkVersion": 35
           }
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      "expo-secure-store",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Kitaplığınızın kilidini güvenle açmak için Face ID kullanımına izin verin."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

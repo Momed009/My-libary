@@ -1,16 +1,19 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { useColorScheme } from 'react-native';
 import { Colors } from '@/constants/theme';
 import { getSetting, setSetting } from '@/services/db';
 import { translations } from '@/constants/translations';
 
 export type ThemeType = 'light' | 'dark' | 'system';
-export type LanguageType = 'tr' | 'en';
+export type LanguageType = 'tr' | 'en' | 'ar';
+
+const VALID_THEMES: ThemeType[] = ['light', 'dark', 'system'];
+const VALID_LANGUAGES: LanguageType[] = ['tr', 'en', 'ar'];
 
 interface PreferencesContextType {
   theme: ThemeType;
   language: LanguageType;
-  colors: typeof Colors.light;
+  colors: (typeof Colors)[keyof typeof Colors];
   colorScheme: 'light' | 'dark';
   setTheme: (theme: ThemeType) => Promise<void>;
   setLanguage: (lang: LanguageType) => Promise<void>;
@@ -30,10 +33,21 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   useEffect(() => {
     async function loadPreferences() {
       try {
-        const savedTheme = await getSetting('theme', 'system') as ThemeType;
-        const savedLang = await getSetting('language', 'tr') as LanguageType;
-        setThemeState(savedTheme);
-        setLanguageState(savedLang);
+        const savedTheme = await getSetting('theme', 'system');
+        const savedLang = await getSetting('language', 'tr');
+
+        // Validate theme value - if invalid, use default
+        const validatedTheme: ThemeType = VALID_THEMES.includes(savedTheme as ThemeType)
+          ? (savedTheme as ThemeType)
+          : 'system';
+
+        // Validate language value - if invalid, use default
+        const validatedLang: LanguageType = VALID_LANGUAGES.includes(savedLang as LanguageType)
+          ? (savedLang as LanguageType)
+          : 'tr';
+
+        setThemeState(validatedTheme);
+        setLanguageState(validatedLang);
       } catch (error) {
         console.error('Error loading preferences:', error);
       } finally {
@@ -58,32 +72,37 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
     ? (systemColorScheme === 'dark' ? 'dark' : 'light')
     : theme;
 
-  const colors = Colors[activeColorScheme];
+  // Wrap colors computation in useMemo
+  const colors = useMemo(() => Colors[activeColorScheme], [activeColorScheme]);
 
   // Translation helper with optional replacement tokens e.g. {count}
-  const t = (key: string, replacements?: Record<string, string | number>) => {
+  // Use replaceAll (or regex with 'g' flag) so ALL occurrences of a token are replaced
+  const t = useCallback((key: string, replacements?: Record<string, string | number>) => {
     const langDict = translations[language] || translations['tr'];
     let text = langDict[key] || key;
     
     if (replacements) {
       Object.keys(replacements).forEach((token) => {
-        text = text.replace(`{${token}}`, String(replacements[token]));
+        text = text.replaceAll(`{${token}}`, String(replacements[token]));
       });
     }
     return text;
-  };
+  }, [language]);
+
+  // Wrap the context value in useMemo
+  const contextValue = useMemo(() => ({
+    theme,
+    language,
+    colors,
+    colorScheme: activeColorScheme,
+    setTheme,
+    setLanguage,
+    t,
+    isReady
+  }), [theme, language, colors, activeColorScheme, setTheme, setLanguage, t, isReady]);
 
   return (
-    <PreferencesContext.Provider value={{
-      theme,
-      language,
-      colors,
-      colorScheme: activeColorScheme,
-      setTheme,
-      setLanguage,
-      t,
-      isReady
-    }}>
+    <PreferencesContext.Provider value={contextValue}>
       {children}
     </PreferencesContext.Provider>
   );

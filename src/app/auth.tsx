@@ -11,6 +11,7 @@ import {
   Platform,
   ScrollView,
   Animated,
+  useWindowDimensions,
   Dimensions,
   StatusBar,
 } from 'react-native';
@@ -19,7 +20,7 @@ import { useAuth } from '@/context/AuthContext';
 import { usePreferences } from '@/context/PreferencesContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
 
 type AuthMode = 'login' | 'register';
 
@@ -27,6 +28,7 @@ export default function AuthScreen({ onSkip }: { onSkip: () => void }) {
   const { signInWithEmail, signUpWithEmail } = useAuth();
   const { t, colors, colorScheme } = usePreferences();
   const insets = useSafeAreaInsets();
+  const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
 
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
@@ -76,6 +78,14 @@ export default function AuthScreen({ onSkip }: { onSkip: () => void }) {
         useNativeDriver: true,
       }),
     ]).start();
+
+    return () => {
+      fadeAnim.stopAnimation();
+      slideAnim.stopAnimation();
+      logoScale.stopAnimation();
+      formSlide.stopAnimation();
+      cardOpacity.stopAnimation();
+    };
   }, []);
 
   // Animate mode switch
@@ -346,6 +356,8 @@ export default function AuthScreen({ onSkip }: { onSkip: () => void }) {
   );
 }
 
+const { width: _SW, height: _SH } = Dimensions.get('window');
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -359,27 +371,27 @@ const styles = StyleSheet.create({
   },
   gradientCircle1: {
     position: 'absolute',
-    width: SCREEN_WIDTH * 1.2,
-    height: SCREEN_WIDTH * 1.2,
-    borderRadius: SCREEN_WIDTH * 0.6,
-    top: -SCREEN_WIDTH * 0.4,
-    right: -SCREEN_WIDTH * 0.3,
+    width: _SW * 1.2,
+    height: _SW * 1.2,
+    borderRadius: _SW * 0.6,
+    top: -_SW * 0.4,
+    right: -_SW * 0.3,
   },
   gradientCircle2: {
     position: 'absolute',
-    width: SCREEN_WIDTH * 0.8,
-    height: SCREEN_WIDTH * 0.8,
-    borderRadius: SCREEN_WIDTH * 0.4,
-    bottom: SCREEN_HEIGHT * 0.15,
-    left: -SCREEN_WIDTH * 0.3,
+    width: _SW * 0.8,
+    height: _SW * 0.8,
+    borderRadius: _SW * 0.4,
+    bottom: _SH * 0.15,
+    left: -_SW * 0.3,
   },
   gradientCircle3: {
     position: 'absolute',
-    width: SCREEN_WIDTH * 0.5,
-    height: SCREEN_WIDTH * 0.5,
-    borderRadius: SCREEN_WIDTH * 0.25,
-    bottom: -SCREEN_WIDTH * 0.1,
-    right: -SCREEN_WIDTH * 0.1,
+    width: _SW * 0.5,
+    height: _SW * 0.5,
+    borderRadius: _SW * 0.25,
+    bottom: -_SW * 0.1,
+    right: -_SW * 0.1,
   },
   scrollContent: {
     flexGrow: 1,

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Modal, ActivityIndicator, Animated } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, Modal, ActivityIndicator, Animated, Linking } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 
 interface BarcodeScannerProps {
@@ -12,15 +12,16 @@ export default function BarcodeScanner({ visible, onClose, onScan }: BarcodeScan
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [torch, setTorch] = useState(false);
-  const scanLineAnim = useState(new Animated.Value(0))[0];
+  const scanLineAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
       setScanned(false);
       setTorch(false);
-      
+      scanLineAnim.setValue(0);
+
       // Start the scanner red line animation
-      Animated.loop(
+      const animation = Animated.loop(
         Animated.sequence([
           Animated.timing(scanLineAnim, {
             toValue: 200,
@@ -33,7 +34,12 @@ export default function BarcodeScanner({ visible, onClose, onScan }: BarcodeScan
             useNativeDriver: true,
           }),
         ])
-      ).start();
+      );
+      animation.start();
+
+      return () => {
+        animation.stop();
+      };
     }
   }, [visible]);
 
@@ -49,6 +55,13 @@ export default function BarcodeScanner({ visible, onClose, onScan }: BarcodeScan
   const handleRequestPermission = async () => {
     await requestPermission();
   };
+
+  const handleOpenSettings = () => {
+    Linking.openSettings();
+  };
+
+  // Check if permission is permanently denied (can't ask again)
+  const isPermissionPermanentlyDenied = permission && !permission.granted && !permission.canAskAgain;
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
@@ -66,9 +79,17 @@ export default function BarcodeScanner({ visible, onClose, onScan }: BarcodeScan
             <Text style={styles.errorText}>
               Kitap barkodlarını taramak için kamera iznine ihtiyacımız var.
             </Text>
-            <TouchableOpacity style={styles.permissionButton} onPress={handleRequestPermission}>
-              <Text style={styles.permissionButtonText}>İzin Ver</Text>
-            </TouchableOpacity>
+            {isPermissionPermanentlyDenied ? (
+              // Permission permanently denied - direct to settings
+              <TouchableOpacity style={styles.permissionButton} onPress={handleOpenSettings}>
+                <Text style={styles.permissionButtonText}>Ayarları Aç</Text>
+              </TouchableOpacity>
+            ) : (
+              // Can still ask for permission
+              <TouchableOpacity style={styles.permissionButton} onPress={handleRequestPermission}>
+                <Text style={styles.permissionButtonText}>İzin Ver</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.closeTextButton} onPress={onClose}>
               <Text style={styles.closeTextButtonText}>Vazgeç</Text>
             </TouchableOpacity>

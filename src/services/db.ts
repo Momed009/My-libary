@@ -284,7 +284,7 @@ export async function searchBooks(query: string): Promise<Book[]> {
     `SELECT b.*, c.name as category_name 
      FROM books b 
      LEFT JOIN categories c ON b.category_id = c.id 
-     WHERE b.title LIKE ? OR b.author LIKE ? 
+     WHERE (b.title LIKE ? OR b.author LIKE ?) AND (b.is_deleted = 0 OR b.is_deleted IS NULL) 
      ORDER BY b.title ASC`,
     searchQuery,
     searchQuery
@@ -298,7 +298,7 @@ export async function getFilteredBooks(filters: {
   categoryId?: number;
 }): Promise<Book[]> {
   const database = getDbConnection();
-  let sql = `SELECT b.*, c.name as category_name FROM books b LEFT JOIN categories c ON b.category_id = c.id WHERE 1=1`;
+  let sql = `SELECT b.*, c.name as category_name FROM books b LEFT JOIN categories c ON b.category_id = c.id WHERE 1=1 AND (b.is_deleted = 0 OR b.is_deleted IS NULL)`;
   const params: any[] = [];
 
   if (filters.status) {
@@ -323,7 +323,7 @@ export async function checkBookByIsbn(isbn: string): Promise<Book | null> {
   if (!isbn || isbn.trim() === '') return null;
   const database = getDbConnection();
   return await database.getFirstAsync<Book>(
-    'SELECT * FROM books WHERE isbn = ?',
+    'SELECT * FROM books WHERE isbn = ? AND (is_deleted = 0 OR is_deleted IS NULL)',
     isbn.trim()
   );
 }
@@ -332,7 +332,7 @@ export async function checkBookByIsbn(isbn: string): Promise<Book | null> {
 export async function checkBookByTitleAndAuthor(title: string, author: string): Promise<Book | null> {
   const database = getDbConnection();
   return await database.getFirstAsync<Book>(
-    'SELECT * FROM books WHERE LOWER(title) = LOWER(?) AND LOWER(author) = LOWER(?)',
+    'SELECT * FROM books WHERE LOWER(title) = LOWER(?) AND LOWER(author) = LOWER(?) AND (is_deleted = 0 OR is_deleted IS NULL)',
     title.trim(),
     author.trim()
   );
@@ -363,7 +363,7 @@ export async function updateBookFavoriteStatus(id: number, isFavorite: boolean):
 // Associate book to category
 export async function associateBookToCategory(bookId: number, categoryId: number | null): Promise<void> {
   const database = getDbConnection();
-  await database.runAsync('UPDATE books SET category_id = ? WHERE id = ?', categoryId, bookId);
+  await database.runAsync('UPDATE books SET category_id = ?, updated_at = datetime(\'now\'), synced = 0 WHERE id = ?', categoryId, bookId);
 }
 
 // --- CATEGORY CRUD ---
@@ -374,7 +374,7 @@ export async function getAllCategories(): Promise<Category[]> {
   return await database.getAllAsync<Category>(
     `SELECT c.*, COUNT(b.id) as book_count 
      FROM categories c 
-     LEFT JOIN books b ON b.category_id = c.id 
+     LEFT JOIN books b ON b.category_id = c.id AND (b.is_deleted = 0 OR b.is_deleted IS NULL) 
      GROUP BY c.id 
      ORDER BY c.name ASC`
   );
@@ -406,7 +406,7 @@ export async function updateCategory(id: number, name: string, icon: string): Pr
 export async function deleteCategory(id: number): Promise<void> {
   const database = getDbConnection();
   // Set category_id to NULL on all books belonging to this category
-  await database.runAsync('UPDATE books SET category_id = NULL WHERE category_id = ?', id);
+  await database.runAsync('UPDATE books SET category_id = NULL, updated_at = datetime(\'now\'), synced = 0 WHERE category_id = ?', id);
   // Delete the category itself
   await database.runAsync('DELETE FROM categories WHERE id = ?', id);
 }
@@ -452,11 +452,11 @@ export async function addLending(
 export async function getActiveLendings(): Promise<Lending[]> {
   const database = getDbConnection();
   return await database.getAllAsync<Lending>(
-    `SELECT l.*, b.title as book_title, b.photo_path 
-     FROM lendings l 
-     JOIN books b ON l.book_id = b.id 
-     WHERE l.returned = 0 
-     ORDER BY l.return_date ASC`
+     `SELECT l.*, b.title as book_title, b.photo_path 
+      FROM lendings l 
+      JOIN books b ON l.book_id = b.id 
+      WHERE l.returned = 0 AND (l.is_deleted = 0 OR l.is_deleted IS NULL) AND (b.is_deleted = 0 OR b.is_deleted IS NULL) 
+      ORDER BY l.return_date ASC`
   );
 }
 
@@ -504,11 +504,11 @@ export async function getLibraryStats(): Promise<LibraryStats> {
       SUM(CASE WHEN status = 'unread' THEN 1 ELSE 0 END) as unread,
       SUM(CASE WHEN favorite = 1 THEN 1 ELSE 0 END) as favorites,
       SUM(COALESCE(page_count, 0)) as pages
-    FROM books
+    FROM books WHERE (is_deleted = 0 OR is_deleted IS NULL)
   `);
 
   const activeLendingsCount = await database.getFirstAsync<{ count: number }>(
-    'SELECT COUNT(*) as count FROM lendings WHERE returned = 0'
+    'SELECT COUNT(*) as count FROM lendings WHERE returned = 0 AND (is_deleted = 0 OR is_deleted IS NULL)'
   );
 
   return {
@@ -577,7 +577,7 @@ export async function deleteBookQuote(id: number): Promise<void> {
 export async function getBookQuotes(bookId: number): Promise<BookQuote[]> {
   const database = getDbConnection();
   const rows = await database.getAllAsync<any>(
-    'SELECT * FROM book_quotes WHERE book_id = ? ORDER BY id DESC',
+    'SELECT * FROM book_quotes WHERE book_id = ? AND (is_deleted = 0 OR is_deleted IS NULL) ORDER BY id DESC',
     bookId
   );
   return rows.map(row => ({

@@ -10,9 +10,12 @@ import {
   Dimensions,
   Modal,
   FlatList,
-  Image
+  Image,
+  Platform,
+  Switch
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
+import * as LocalAuthentication from 'expo-local-authentication';
 import { createAndShareBackup, restoreBackup } from '@/services/fs';
 import { 
   initDatabase, 
@@ -53,6 +56,10 @@ export default function SettingsScreen() {
   const [loading, setLoading] = useState(false);
   const [loadingText, setLoadingText] = useState('');
   const [stats, setStats] = useState<LibraryStats | null>(null);
+
+  // Biometric states
+  const [isBiometricSupported, setIsBiometricSupported] = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
 
   // Goal & Notification states
   const [yearlyGoal, setYearlyGoal] = useState<number>(12);
@@ -111,7 +118,7 @@ export default function SettingsScreen() {
     try {
       const date = new Date(dateString);
       if (isNaN(date.getTime())) return dateString;
-      return date.toLocaleDateString(language === 'tr' ? 'tr-TR' : 'en-US', {
+      return date.toLocaleDateString(language === 'tr' ? 'tr-TR' : language === 'ar' ? 'ar-EG' : 'en-US', {
         day: 'numeric',
         month: 'short',
         year: 'numeric'
@@ -145,6 +152,13 @@ export default function SettingsScreen() {
       const notifMinuteVal = await getSetting('notification_minute', '30');
       setNotificationMinute(parseInt(notifMinuteVal, 10) || 30);
 
+      // Check biometric support and load settings
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+      setIsBiometricSupported(hasHardware && isEnrolled);
+
+      const bioLockVal = await getSetting('biometric_lock', 'false');
+      setBiometricEnabled(bioLockVal === 'true');
 
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -153,23 +167,76 @@ export default function SettingsScreen() {
 
   const handleSaveGoal = async (newGoal: number) => {
     if (newGoal < 1) return;
-    setYearlyGoal(newGoal);
-    await setSetting('yearly_goal_2026', String(newGoal));
+    try {
+      setYearlyGoal(newGoal);
+      await setSetting('yearly_goal_2026', String(newGoal));
+    } catch (error) {
+      console.error('Error saving goal:', error);
+    }
   };
 
   const handleToggleNotifications = async (value: boolean) => {
-    setNotificationsEnabled(value);
-    await setSetting('notifications_enabled', String(value));
-    await setupNotifications(value, notificationHour, notificationMinute);
+    try {
+      setNotificationsEnabled(value);
+      await setSetting('notifications_enabled', String(value));
+      await setupNotifications(value, notificationHour, notificationMinute);
+    } catch (error) {
+      console.error('Error toggling notifications:', error);
+    }
   };
 
   const handleSaveTime = async (hour: number, minute: number) => {
-    setNotificationHour(hour);
-    setNotificationMinute(minute);
-    await setSetting('notification_hour', String(hour));
-    await setSetting('notification_minute', String(minute));
-    await setupNotifications(notificationsEnabled, hour, minute);
-    setShowTimePickerModal(false);
+    try {
+      setNotificationHour(hour);
+      setNotificationMinute(minute);
+      await setSetting('notification_hour', String(hour));
+      await setSetting('notification_minute', String(minute));
+      await setupNotifications(notificationsEnabled, hour, minute);
+      setShowTimePickerModal(false);
+    } catch (error) {
+      console.error('Error saving notification time:', error);
+    }
+  };
+
+  const handleToggleBiometric = async (value: boolean) => {
+    try {
+      if (value) {
+        // Authenticate first before enabling
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: t('biometric_auth_prompt'),
+          fallbackLabel: t('cancel'),
+          disableDeviceFallback: false,
+        });
+
+        if (result.success) {
+          setBiometricEnabled(true);
+          await setSetting('biometric_lock', 'true');
+          Alert.alert(t('success'), language === 'tr' ? 'Biyometrik kilit başarıyla etkinleştirildi.' : language === 'ar' ? 'تم تفعيل القفل البيومتري بنجاح.' : 'Biometric lock successfully enabled.');
+        } else {
+          setBiometricEnabled(false);
+          await setSetting('biometric_lock', 'false');
+        }
+      } else {
+        // Authenticate first before disabling
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: t('biometric_auth_prompt'),
+          fallbackLabel: t('cancel'),
+          disableDeviceFallback: false,
+        });
+
+        if (result.success) {
+          setBiometricEnabled(false);
+          await setSetting('biometric_lock', 'false');
+          Alert.alert(t('success'), language === 'tr' ? 'Biyometrik kilit devre dışı bırakıldı.' : language === 'ar' ? 'تم إلغاء تفعيل القفل البيومتري.' : 'Biometric lock disabled.');
+        } else {
+          // Keep it enabled if auth failed
+          setBiometricEnabled(true);
+        }
+      }
+    } catch (error) {
+      console.error('Error toggling biometric lock:', error);
+      Alert.alert(t('error'), t('biometric_auth_failed'));
+    }
   };
 
   const setupNotifications = async (enabled: boolean, hour: number, minute: number) => {
@@ -342,13 +409,15 @@ export default function SettingsScreen() {
     }
 
     setLoading(true);
-    setLoadingText(language === 'tr' ? 'Veriler bulutla senkronize ediliyor...' : 'Syncing data with cloud...');
+    setLoadingText(language === 'tr' ? 'Veriler bulutla senkronize ediliyor...' : language === 'ar' ? 'جاري مزامنة البيانات مع السحابة...' : 'Syncing data with cloud...');
     try {
       const result = await performFullSync(user.id);
       Alert.alert(
-        language === 'tr' ? 'Senkronizasyon Başarılı' : 'Sync Successful',
+        language === 'tr' ? 'Senkronizasyon Başarılı' : language === 'ar' ? 'تمت المزامنة بنجاح' : 'Sync Successful',
         language === 'tr' 
           ? `Verileriniz bulutla başarıyla eşitlendi.\nGönderilen: ${result.pushed} kayıt\nAlınan: ${result.pulled} kayıt`
+          : language === 'ar'
+          ? `تمت مزامنة بياناتك بنجاح.\nالسجلات المرسلة: ${result.pushed}\nالسجلات المستلمة: ${result.pulled}`
           : `Your data was synced successfully.\nPushed: ${result.pushed} records\nPulled: ${result.pulled} records`
       );
       // Refresh stats in case new books were pulled
@@ -356,9 +425,11 @@ export default function SettingsScreen() {
     } catch (error: any) {
       console.error('Sync error:', error);
       Alert.alert(
-        language === 'tr' ? 'Senkronizasyon Hatası' : 'Sync Error',
+        language === 'tr' ? 'Senkronizasyon Hatası' : language === 'ar' ? 'خطأ في المزامنة' : 'Sync Error',
         language === 'tr'
           ? `Eşitleme sırasında bir hata oluştu. Lütfen internet bağlantınızı ve veritabanı ayarlarınızı kontrol edin.\n\nHata: ${error.message || error}`
+          : language === 'ar'
+          ? `حدث خطأ أثناء المزامنة. يرجى التحقق من اتصال الإنترنت وإعدادات قاعدة البيانات.\n\nالخطأ: ${error.message || error}`
           : `An error occurred during sync. Please check your connection and database setup.\n\nError: ${error.message || error}`
       );
     } finally {
@@ -368,16 +439,16 @@ export default function SettingsScreen() {
 
   const handleLogout = () => {
     Alert.alert(
-      language === 'tr' ? 'Çıkış Yap' : 'Log Out',
-      language === 'tr' ? 'Hesabınızdan çıkış yapmak istediğinize emin misiniz?' : 'Are you sure you want to log out of your account?',
+      language === 'tr' ? 'Çıkış Yap' : language === 'ar' ? 'تسجيل الخروج' : 'Log Out',
+      language === 'tr' ? 'Hesabınızdan çıkış yapmak istediğinize emin misiniz?' : language === 'ar' ? 'هل أنت متأكد من رغبتك في تسجيل الخروج من حسابك؟' : 'Are you sure you want to log out of your account?',
       [
-        { text: language === 'tr' ? 'Vazgeç' : 'Cancel', style: 'cancel' },
+        { text: language === 'tr' ? 'Vazgeç' : language === 'ar' ? 'إلغاء' : 'Cancel', style: 'cancel' },
         { 
-          text: language === 'tr' ? 'Çıkış Yap' : 'Log Out', 
+          text: language === 'tr' ? 'Çıkış Yap' : language === 'ar' ? 'تسجيل الخروج' : 'Log Out', 
           style: 'destructive',
           onPress: async () => {
             setLoading(true);
-            setLoadingText(language === 'tr' ? 'Çıkış yapılıyor...' : 'Logging out...');
+            setLoadingText(language === 'tr' ? 'Çıkış yapılıyor...' : language === 'ar' ? 'جاري تسجيل الخروج...' : 'Logging out...');
             try {
               await signOut();
             } catch (error) {
@@ -434,7 +505,7 @@ export default function SettingsScreen() {
         <View style={[styles.statsCard, { backgroundColor: colors.backgroundElement }]}>
           <Ionicons name="document-text-outline" size={22} color="#FF9500" />
           <Text style={[styles.statsValue, { color: colors.text }]}>
-            {stats?.totalPages ? stats.totalPages.toLocaleString(language === 'tr' ? 'tr-TR' : 'en-US') : 0}
+            {stats?.totalPages ? stats.totalPages.toLocaleString(language === 'tr' ? 'tr-TR' : language === 'ar' ? 'ar-EG' : 'en-US') : 0}
           </Text>
           <Text style={[styles.statsLabel, { color: colors.textSecondary }]}>{t('settings_total_pages')}</Text>
         </View>
@@ -515,9 +586,9 @@ export default function SettingsScreen() {
             </View>
             <Text style={[styles.optionTitle, { color: colors.text, flex: 1 }]}>{t('settings_lang_label')}</Text>
           </View>
-          <View style={styles.segmentContainer}>
+          <View style={styles.segmentContainer3}>
             <TouchableOpacity 
-              style={[styles.segmentBtn, language === 'tr' && styles.segmentBtnActive]} 
+              style={[styles.segmentBtn3, language === 'tr' && styles.segmentBtnActive]} 
               onPress={() => setLanguage('tr')}
             >
               <Text 
@@ -528,7 +599,7 @@ export default function SettingsScreen() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity 
-              style={[styles.segmentBtn, language === 'en' && styles.segmentBtnActive]} 
+              style={[styles.segmentBtn3, language === 'en' && styles.segmentBtnActive]} 
               onPress={() => setLanguage('en')}
             >
               <Text 
@@ -536,6 +607,17 @@ export default function SettingsScreen() {
                 style={[styles.segmentText, language === 'en' && styles.segmentTextActive]}
               >
                 EN
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.segmentBtn3, language === 'ar' && styles.segmentBtnActive]} 
+              onPress={() => setLanguage('ar')}
+            >
+              <Text 
+                allowFontScaling={false}
+                style={[styles.segmentText, language === 'ar' && styles.segmentTextActive]}
+              >
+                AR
               </Text>
             </TouchableOpacity>
           </View>
@@ -596,11 +678,36 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {isBiometricSupported && (
+          <>
+            <View style={[styles.separator, { backgroundColor: colorScheme === 'dark' ? '#38383A' : '#E5E5EA' }]} />
+            <View style={styles.settingItem}>
+              <View style={styles.settingLabelRow}>
+                <View style={[styles.optionIconContainer, { backgroundColor: '#34C759' }]}>
+                  <Ionicons name="finger-print" size={20} color="#FFF" />
+                </View>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={[styles.optionTitle, { color: colors.text }]}>{t('settings_biometric_label')}</Text>
+                  <Text style={[styles.optionDescription, { color: colors.textSecondary, fontSize: 11, marginTop: 2 }]} numberOfLines={2}>
+                    {t('settings_biometric_desc')}
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={biometricEnabled}
+                onValueChange={handleToggleBiometric}
+                trackColor={{ false: '#767577', true: '#34C759' }}
+                thumbColor={Platform.OS === 'android' ? (biometricEnabled ? '#FFF' : '#f4f3f4') : undefined}
+              />
+            </View>
+          </>
+        )}
       </View>
 
       {/* Reading Goals & Reminders Section */}
       <Text style={[styles.sectionTitle, { color: colors.textSecondary, marginTop: 24 }]}>
-        {language === 'tr' ? 'OKUMA HEDEFLERİ & BİLDİRİMLER' : 'READING GOALS & REMINDERS'}
+        {language === 'tr' ? 'OKUMA HEDEFLERİ & BİLDİRİMLER' : language === 'ar' ? 'أهداف القراءة والتنبيهات' : 'READING GOALS & REMINDERS'}
       </Text>
       
       <View style={[styles.optionsGroup, { backgroundColor: colors.backgroundElement }]}>
@@ -691,7 +798,7 @@ export default function SettingsScreen() {
 
       {/* Cloud Sync & Account Section */}
       <Text style={[styles.sectionTitle, { color: colors.textSecondary, marginTop: 24 }]}>
-        {language === 'tr' ? 'BULUT SENKRONİZASYONU & HESAP' : 'CLOUD SYNC & ACCOUNT'}
+        {language === 'tr' ? 'BULUT SENKRONİZASYONU & HESAP' : language === 'ar' ? 'المزامنة السحابية والحساب' : 'CLOUD SYNC & ACCOUNT'}
       </Text>
       
       <View style={[styles.optionsGroup, { backgroundColor: colors.backgroundElement }]}>
@@ -705,7 +812,7 @@ export default function SettingsScreen() {
                 </View>
                 <View style={styles.optionTextContainer}>
                   <Text style={[styles.optionTitle, { color: colors.text }]}>
-                    {language === 'tr' ? 'Oturum Açık' : 'Logged In'}
+                    {language === 'tr' ? 'Oturum Açık' : language === 'ar' ? 'تم تسجيل الدخول' : 'Logged In'}
                   </Text>
                   <Text style={styles.optionDescription}>{user.email}</Text>
                 </View>
@@ -722,11 +829,13 @@ export default function SettingsScreen() {
                 </View>
                 <View style={styles.optionTextContainer}>
                   <Text style={[styles.optionTitle, { color: colors.text }]}>
-                    {language === 'tr' ? 'Şimdi Bulutla Eşitle' : 'Sync with Cloud Now'}
+                    {language === 'tr' ? 'Şimdi Bulutla Eşitle' : language === 'ar' ? 'المزامنة مع السحابة الآن' : 'Sync with Cloud Now'}
                   </Text>
                   <Text style={styles.optionDescription}>
                     {language === 'tr' 
                       ? 'Kitaplarınızı ve okuma durumlarınızı tüm cihazlarınızla eşitleyin.' 
+                      : language === 'ar'
+                      ? 'قم بمزامنة كتب مكتبتك وحالة الإعارة بين جميع أجهزتك.'
                       : 'Sync your library books and lending statuses across all devices.'}
                   </Text>
                 </View>
@@ -744,11 +853,13 @@ export default function SettingsScreen() {
                 </View>
                 <View style={styles.optionTextContainer}>
                   <Text style={[styles.optionTitle, { color: '#FF453A' }]}>
-                    {language === 'tr' ? 'Hesaptan Çıkış Yap' : 'Log Out of Account'}
+                    {language === 'tr' ? 'Hesaptan Çıkış Yap' : language === 'ar' ? 'تسجيل الخروج من الحساب' : 'Log Out of Account'}
                   </Text>
                   <Text style={styles.optionDescription}>
                     {language === 'tr' 
                       ? 'Bu cihazdaki oturumunuzu kapatın.' 
+                      : language === 'ar'
+                      ? 'سجل خروجك من حسابك على هذا الجهاز.'
                       : 'Sign out of your account on this device.'}
                   </Text>
                 </View>
@@ -766,11 +877,13 @@ export default function SettingsScreen() {
                 </View>
                 <View style={styles.optionTextContainer}>
                   <Text style={[styles.optionTitle, { color: colors.text }]}>
-                    {language === 'tr' ? 'Bulut Eşitleme Kapalı' : 'Cloud Sync Disabled'}
+                    {language === 'tr' ? 'Bulut Eşitleme Kapalı' : language === 'ar' ? 'المزامنة السحابية معطلة' : 'Cloud Sync Disabled'}
                   </Text>
                   <Text style={styles.optionDescription}>
                     {language === 'tr' 
                       ? 'Kitaplarınızı bulutta saklamak ve diğer cihazlarınızla eşitlemek için oturum açın.' 
+                      : language === 'ar'
+                      ? 'سجل الدخول لحفظ كتبك في السحابة ومزامنتها مع أجهزة أخرى.'
                       : 'Log in to store your books in the cloud and sync with other devices.'}
                   </Text>
                 </View>
@@ -787,11 +900,13 @@ export default function SettingsScreen() {
                 </View>
                 <View style={styles.optionTextContainer}>
                   <Text style={[styles.optionTitle, { color: colors.text }]}>
-                    {language === 'tr' ? 'Giriş Yap / Hesap Oluştur' : 'Log In / Create Account'}
+                    {language === 'tr' ? 'Giriş Yap / Hesap Oluştur' : language === 'ar' ? 'تسجيل الدخول / إنشاء حساب' : 'Log In / Create Account'}
                   </Text>
                   <Text style={styles.optionDescription}>
                     {language === 'tr' 
                       ? 'Kitaplığınızı bulut hesabınızla eşitlemek için oturum açın.' 
+                      : language === 'ar'
+                      ? 'سجل دخولك لمزامنة مكتبتك مع حسابك السحابي.'
                       : 'Sign in to sync your library with your cloud account.'}
                   </Text>
                 </View>
@@ -945,8 +1060,8 @@ export default function SettingsScreen() {
               </View>
             ) : (
               <FlatList
-                data={statsModalType === 'lent' ? statsLendings : statsBooks}
-                keyExtractor={(item, index) => item.id.toString() + '_' + index}
+                data={(statsModalType === 'lent' ? statsLendings : statsBooks) as any[]}
+                keyExtractor={(item: any, index: number) => item.id.toString() + '_' + index}
                 contentContainerStyle={styles.modalListContent}
                 showsVerticalScrollIndicator={false}
                 ListEmptyComponent={
@@ -958,11 +1073,11 @@ export default function SettingsScreen() {
                       style={{ marginBottom: 12 }}
                     />
                     <Text style={[styles.modalEmptyText, { color: colors.textSecondary }]}>
-                      {language === 'tr' ? 'Gösterilecek kitap bulunamadı.' : 'No books found to display.'}
+                      {language === 'tr' ? 'Gösterilecek kitap bulunamadı.' : language === 'ar' ? 'لم يتم العثور على كتب لعرضها.' : 'No books found to display.'}
                     </Text>
                   </View>
                 }
-                renderItem={({ item }) => {
+                renderItem={({ item }: { item: any }) => {
                   if (statsModalType === 'lent') {
                     const lendingItem = item as Lending;
                     return (
@@ -1072,7 +1187,7 @@ export default function SettingsScreen() {
               {/* Hours Column */}
               <View style={styles.timeColumnContainer}>
                 <Text style={[styles.timeColumnLabel, { color: colors.textSecondary }]}>
-                  {language === 'tr' ? 'Saat' : 'Hour'}
+                  {language === 'tr' ? 'Saat' : language === 'ar' ? 'ساعة' : 'Hour'}
                 </Text>
                 <ScrollView 
                   showsVerticalScrollIndicator={false}
@@ -1101,7 +1216,7 @@ export default function SettingsScreen() {
               {/* Minutes Column */}
               <View style={styles.timeColumnContainer}>
                 <Text style={[styles.timeColumnLabel, { color: colors.textSecondary }]}>
-                  {language === 'tr' ? 'Dakika' : 'Minute'}
+                  {language === 'tr' ? 'Dakika' : language === 'ar' ? 'دقيقة' : 'Minute'}
                 </Text>
                 <ScrollView 
                   showsVerticalScrollIndicator={false}
@@ -1605,5 +1720,9 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 14,
     fontWeight: 'bold',
+  },
+  timePickerBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

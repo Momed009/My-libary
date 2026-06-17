@@ -87,11 +87,13 @@ export default function LendingScreen() {
       endDate.setHours(11, 0, 0, 0);
 
       const eventId = await Calendar.createEventAsync(calendarId, {
-        title: language === 'tr' ? `Kitap İade Hatırlatması: ${bookTitle}` : `Book Return Reminder: ${bookTitle}`,
+        title: language === 'tr' ? `Kitap İade Hatırlatması: ${bookTitle}` : language === 'ar' ? `تذكير إرجاع الكتاب: ${bookTitle}` : `Book Return Reminder: ${bookTitle}`,
         startDate,
         endDate,
         notes: language === 'tr'
           ? `"${borrower}" kişisine ödünç verdiğiniz "${bookTitle}" kitabının bugün iade günü.`
+          : language === 'ar'
+          ? `كتاب "${bookTitle}" الذي أعرته إلى "${borrower}" يستحق اليوم.`
           : `The book "${bookTitle}" you lent to "${borrower}" is due today.`,
         alarms: [
           { relativeOffset: 0 },
@@ -174,6 +176,8 @@ export default function LendingScreen() {
       
       let alertMsg = language === 'tr'
         ? `"${selectedBook.title}" kitabı ${borrowerName.trim()} kişisine başarıyla ödünç verildi.`
+        : language === 'ar'
+        ? `تمت إعارة كتاب "${selectedBook.title}" بنجاح إلى ${borrowerName.trim()}.`
         : `"${selectedBook.title}" was successfully lent to ${borrowerName.trim()}.`;
       if (calendarEventId) {
         alertMsg += '\n\n📅 ' + t('lending_calendar_added');
@@ -228,19 +232,19 @@ export default function LendingScreen() {
     if (diffDays < 0) {
       const absDays = Math.abs(diffDays);
       return {
-        text: language === 'tr' ? `${absDays} gün gecikti` : `${absDays} days overdue`,
+        text: language === 'tr' ? `${absDays} gün gecikti` : language === 'ar' ? `متأخر ${absDays} يوم` : `${absDays} days overdue`,
         isOverdue: true,
         style: styles.overdueDays
       };
     } else if (diffDays === 0) {
       return {
-        text: language === 'tr' ? 'Bugün iade günü' : 'Due today',
+        text: language === 'tr' ? 'Bugün iade günü' : language === 'ar' ? 'تاريخ الإرجاع اليوم' : 'Due today',
         isOverdue: true,
         style: styles.todayDays
       };
     } else {
       return {
-        text: language === 'tr' ? `${diffDays} gün kaldı` : `${diffDays} days remaining`,
+        text: language === 'tr' ? `${diffDays} gün kaldı` : language === 'ar' ? `متبقي ${diffDays} يوم` : `${diffDays} days remaining`,
         isOverdue: false,
         style: styles.remainingDays
       };
@@ -250,7 +254,7 @@ export default function LendingScreen() {
   const formatDate = useCallback((dateString: string) => {
     try {
       const date = new Date(dateString);
-      return date.toLocaleDateString(language === 'tr' ? 'tr-TR' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+      return date.toLocaleDateString(language === 'tr' ? 'tr-TR' : language === 'ar' ? 'ar-EG' : 'en-US', { day: 'numeric', month: 'long', year: 'numeric' });
     } catch {
       return dateString;
     }
@@ -264,6 +268,53 @@ export default function LendingScreen() {
       (book.author && book.author.toLowerCase().includes(bookSearchQuery.toLowerCase()))
     ), [availableBooks, bookSearchQuery]);
 
+  const renderLendingItem = useCallback(({ item }: { item: Lending }) => {
+    const daysInfo = getRemainingDaysInfo(item.return_date);
+    return (
+      <View style={[styles.lendingCard, { backgroundColor: colors.backgroundElement }]}>
+        {/* Cover Photo */}
+        {item.photo_path ? (
+          <Image source={{ uri: item.photo_path }} style={styles.coverImage} />
+        ) : (
+          <View style={[styles.placeholderCover, { backgroundColor: colorScheme === 'dark' ? '#2E2F33' : '#E5E5EA' }]}>
+            <Ionicons name="book-outline" size={24} color="#8E8E93" />
+          </View>
+        )}
+
+        {/* Info */}
+        <View style={styles.lendingInfo}>
+          <Text style={[styles.bookTitle, { color: colors.text }]} numberOfLines={1}>
+            {item.book_title}
+          </Text>
+          
+          <View style={styles.borrowerRow}>
+            <Ionicons name="person-outline" size={14} color="#8E8E93" />
+            <Text style={[styles.borrowerName, { color: colors.text }]}>{item.borrower_name}</Text>
+          </View>
+
+          <View style={styles.dateRow}>
+            <Ionicons name="calendar-outline" size={14} color="#8E8E93" />
+            <Text style={styles.dateText}>
+              {language === 'tr' ? 'Son İade: ' : language === 'ar' ? 'تاريخ الاستحقاق: ' : 'Due: '}{formatDate(item.return_date)}
+            </Text>
+          </View>
+        </View>
+
+        {/* Status Badge & Check-in button */}
+        <View style={styles.rightActions}>
+          <Text style={[styles.daysBadge, daysInfo.style]}>{daysInfo.text}</Text>
+          <TouchableOpacity
+            style={styles.returnBtn}
+            onPress={() => handleReturnBook(item)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="checkmark-circle-outline" size={26} color="#34C759" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }, [colors, colorScheme, getRemainingDaysInfo, formatDate, language]);
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header and Add button */}
@@ -271,6 +322,8 @@ export default function LendingScreen() {
         <Text style={[styles.headerSub, { color: colors.textSecondary }]}>
           {language === 'tr'
             ? 'Kimin hangi kitabı aldığını ve iade tarihlerini görün'
+            : language === 'ar'
+            ? 'تتبع من استعار أي كتاب وتواريخ الإرجاع المستحقة'
             : 'See who borrowed which book and their due dates'}
         </Text>
         <TouchableOpacity style={styles.lendBtn} onPress={openLendModal}>
@@ -289,52 +342,7 @@ export default function LendingScreen() {
         maxToRenderPerBatch={10}
         windowSize={5}
         initialNumToRender={8}
-        renderItem={useCallback(({ item }: { item: Lending }) => {
-          const daysInfo = getRemainingDaysInfo(item.return_date);
-          return (
-            <View style={[styles.lendingCard, { backgroundColor: colors.backgroundElement }]}>
-              {/* Cover Photo */}
-              {item.photo_path ? (
-                <Image source={{ uri: item.photo_path }} style={styles.coverImage} />
-              ) : (
-                <View style={[styles.placeholderCover, { backgroundColor: colorScheme === 'dark' ? '#2E2F33' : '#E5E5EA' }]}>
-                  <Ionicons name="book-outline" size={24} color="#8E8E93" />
-                </View>
-              )}
-
-              {/* Info */}
-              <View style={styles.lendingInfo}>
-                <Text style={[styles.bookTitle, { color: colors.text }]} numberOfLines={1}>
-                  {item.book_title}
-                </Text>
-                
-                <View style={styles.borrowerRow}>
-                  <Ionicons name="person-outline" size={14} color="#8E8E93" />
-                  <Text style={[styles.borrowerName, { color: colors.text }]}>{item.borrower_name}</Text>
-                </View>
-
-                <View style={styles.dateRow}>
-                  <Ionicons name="calendar-outline" size={14} color="#8E8E93" />
-                  <Text style={styles.dateText}>
-                    {language === 'tr' ? 'Son İade: ' : 'Due: '}{formatDate(item.return_date)}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Status Badge & Check-in button */}
-              <View style={styles.rightActions}>
-                <Text style={[styles.daysBadge, daysInfo.style]}>{daysInfo.text}</Text>
-                <TouchableOpacity
-                  style={styles.returnBtn}
-                  onPress={() => handleReturnBook(item)}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="checkmark-circle-outline" size={26} color="#34C759" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          );
-        }, [colors, colorScheme, getRemainingDaysInfo, formatDate, language])}
+        renderItem={renderLendingItem}
         ListEmptyComponent={
           <View style={styles.centerContainer}>
             <Ionicons name="people-outline" size={72} color={colorScheme === 'dark' ? '#2E2F33' : '#E5E5EA'} />
@@ -342,6 +350,8 @@ export default function LendingScreen() {
             <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
               {language === 'tr'
                 ? 'Arkadaşlarınıza verdiğiniz kitapları eklemek için yukarıdaki butona basın.'
+                : language === 'ar'
+                ? 'اضغط على الزر أعلاه لإضافة الكتب التي أعرتها لأصدقائك.'
                 : 'Press the button above to add books you lent to your friends.'}
             </Text>
           </View>
@@ -373,7 +383,7 @@ export default function LendingScreen() {
               <>
                 <View style={styles.selectorHeader}>
                   <Text style={[styles.selectorTitle, { color: colors.text }]}>
-                    {language === 'tr' ? 'Kitap Seç' : 'Select Book'}
+                    {language === 'tr' ? 'Kitap Seç' : language === 'ar' ? 'اختر كتاباً' : 'Select Book'}
                   </Text>
                   <TouchableOpacity onPress={() => setBookSelectorVisible(false)}>
                     <Ionicons name="close" size={26} color={colors.text} />
@@ -385,7 +395,7 @@ export default function LendingScreen() {
                   <Ionicons name="search-outline" size={18} color="#8E8E93" style={{ marginRight: 8 }} />
                   <TextInput
                     style={[styles.selectorSearchInput, { color: colors.text }]}
-                    placeholder={language === 'tr' ? 'Kitaplığınızda arayın...' : 'Search in your library...'}
+                    placeholder={language === 'tr' ? 'Kitaplığınızda arayın...' : language === 'ar' ? 'ابحث في مكتبتك...' : 'Search in your library...'}
                     placeholderTextColor="#8E8E93"
                     value={bookSearchQuery}
                     onChangeText={setBookSearchQuery}
@@ -420,7 +430,7 @@ export default function LendingScreen() {
                     <View style={styles.centerContainer}>
                       <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
                         {availableBooks.length === 0
-                          ? (language === 'tr' ? 'Tüm kitaplarınız zaten ödünç verilmiş!' : 'All your books are already lent!')
+                          ? (language === 'tr' ? 'Tüm kitaplarınız zaten ödünç verilmiş!' : language === 'ar' ? 'جميع كتبك معارة بالفعل!' : 'All your books are already lent!')
                           : t('search_empty')}
                       </Text>
                     </View>
@@ -432,7 +442,7 @@ export default function LendingScreen() {
                 <Text style={[styles.modalTitle, { color: colors.text }]}>{t('lending_new_title')}</Text>
 
                 {/* Book Selector Trigger */}
-                <Text style={[styles.label, { color: colors.text }]}>{language === 'tr' ? 'Ödünç Verilecek Kitap *' : 'Book to Lend *'}</Text>
+                <Text style={[styles.label, { color: colors.text }]}>{language === 'tr' ? 'Ödünç Verilecek Kitap *' : language === 'ar' ? 'الكتاب المراد إعارته *' : 'Book to Lend *'}</Text>
                 <TouchableOpacity
                   style={[
                     styles.selectorInput,
@@ -444,13 +454,13 @@ export default function LendingScreen() {
                   onPress={() => setBookSelectorVisible(true)}
                 >
                   <Text style={{ color: selectedBook ? colors.text : '#8E8E93', fontSize: 16 }}>
-                    {selectedBook ? selectedBook.title : (language === 'tr' ? 'Kitap seçmek için tıklayın...' : 'Click to select a book...')}
+                    {selectedBook ? selectedBook.title : (language === 'tr' ? 'Kitap seçmek için tıklayın...' : language === 'ar' ? 'انقر لاختيار كتاب...' : 'Click to select a book...')}
                   </Text>
                   <Ionicons name="chevron-down" size={20} color="#8E8E93" />
                 </TouchableOpacity>
 
                 {/* Borrower Name */}
-                <Text style={[styles.label, { color: colors.text }]}>{language === 'tr' ? 'Kime Ödünç Veriliyor? *' : 'Lent to? *'}</Text>
+                <Text style={[styles.label, { color: colors.text }]}>{language === 'tr' ? 'Kime Ödünç Veriliyor? *' : language === 'ar' ? 'معار إلى من؟ *' : 'Lent to? *'}</Text>
                 <TextInput
                   style={[
                     styles.input,
@@ -460,20 +470,20 @@ export default function LendingScreen() {
                       borderColor: colorScheme === 'dark' ? '#38383A' : '#D1D1D6',
                     },
                   ]}
-                  placeholder={language === 'tr' ? 'Kişi adını girin...' : "Enter borrower's name..."}
+                  placeholder={language === 'tr' ? 'Kişi adını girin...' : language === 'ar' ? 'أدخل اسم الشخص...' : "Enter borrower's name..."}
                   placeholderTextColor="#8E8E93"
                   value={borrowerName}
                   onChangeText={setBorrowerName}
                 />
 
                 {/* Return Period Preset */}
-                <Text style={[styles.label, { color: colors.text }]}>{language === 'tr' ? 'Ödünç Süresi *' : 'Lending Period *'}</Text>
+                <Text style={[styles.label, { color: colors.text }]}>{language === 'tr' ? 'Ödünç Süresi *' : language === 'ar' ? 'مدة الإعارة *' : 'Lending Period *'}</Text>
                 <View style={styles.presetsContainer}>
                   {[
-                    { days: 3, label: language === 'tr' ? '3 Gün' : '3 Days' },
-                    { days: 7, label: language === 'tr' ? '1 Hafta' : '1 Week' },
-                    { days: 14, label: language === 'tr' ? '2 Hafta' : '2 Weeks' },
-                    { days: 30, label: language === 'tr' ? '1 Ay' : '1 Month' },
+                    { days: 3, label: language === 'tr' ? '3 Gün' : language === 'ar' ? '٣ أيام' : '3 Days' },
+                    { days: 7, label: language === 'tr' ? '1 Hafta' : language === 'ar' ? 'أسبوع واحد' : '1 Week' },
+                    { days: 14, label: language === 'tr' ? '2 Hafta' : language === 'ar' ? 'أسبوعين' : '2 Weeks' },
+                    { days: 30, label: language === 'tr' ? '1 Ay' : language === 'ar' ? 'شهر واحد' : '1 Month' },
                   ].map((preset) => {
                     const isSelected = selectedDaysPreset === preset.days;
                     return (
@@ -509,7 +519,7 @@ export default function LendingScreen() {
                     <ActivityIndicator size="small" color="#0A84FF" style={{ paddingHorizontal: 20 }} />
                   ) : (
                     <TouchableOpacity style={styles.btnConfirm} onPress={handleLend}>
-                      <Text style={styles.btnConfirmText}>{language === 'tr' ? 'Ödünç Ver' : 'Lend Book'}</Text>
+                      <Text style={styles.btnConfirmText}>{language === 'tr' ? 'Ödünç Ver' : language === 'ar' ? 'إعارة الكتاب' : 'Lend Book'}</Text>
                     </TouchableOpacity>
                   )}
                 </View>

@@ -194,7 +194,8 @@ export async function fetchBookInfoByIsbn(isbn: string): Promise<BookApiInfo | n
 // Download external cover image and save it locally (Timeout: 6 seconds)
 export async function downloadAndSaveCoverImage(url: string): Promise<string | null> {
   try {
-    const extension = url.split('.').pop()?.split('?')[0] || 'jpg';
+    const rawExt = url.split('.').pop()?.split('?')[0]?.split('/')[0] || 'jpg';
+    const extension = /^[a-zA-Z]{2,4}$/.test(rawExt) ? rawExt : 'jpg';
     const tempPath = `${FileSystem.cacheDirectory}temp_download_${Date.now()}.${extension}`;
     
     // 6-second timeout for image download to prevent hanging on slow CDNs
@@ -208,6 +209,7 @@ export async function downloadAndSaveCoverImage(url: string): Promise<string | n
     ]);
     
     if (downloadResult.status !== 200) {
+      await FileSystem.deleteAsync(tempPath, { idempotent: true });
       return null;
     }
     

@@ -2,7 +2,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import JSZip from 'jszip';
-import { initDatabase, closeDbConnection } from './db';
+import { initDatabase, closeDbConnection, getDbConnection } from './db';
 
 // Persistent directory for storing book cover images
 const COVERS_DIRECTORY = `${FileSystem.documentDirectory}book_covers/`;
@@ -22,7 +22,8 @@ export async function saveBookCover(tempUri: string): Promise<string> {
   await initFileSystem();
   
   // Extract file extension and generate unique name
-  const extension = tempUri.split('.').pop() || 'jpg';
+  const rawExt = tempUri.split('.').pop() || 'jpg';
+  const extension = rawExt.split('?')[0].split('#')[0];
   const fileName = `cover_${Date.now()}_${Math.floor(Math.random() * 1000)}.${extension}`;
   const persistentUri = `${COVERS_DIRECTORY}${fileName}`;
   
@@ -98,6 +99,8 @@ export async function createAndShareBackup(): Promise<boolean> {
       dialogTitle: 'Kütüphaneyi Yedekle',
       UTI: 'public.archive' // Required for iOS to understand it's a zip file
     });
+    
+    try { await FileSystem.deleteAsync(backupUri, { idempotent: true }); } catch {}
     
     return true;
   } catch (error) {
@@ -175,6 +178,13 @@ export async function restoreBackup(): Promise<boolean> {
     
     // 7. Re-initialize database connection
     await initDatabase();
+    
+    try {
+      const db = getDbConnection();
+      await db.getFirstAsync('SELECT count(*) FROM books');
+    } catch {
+      throw new Error('Restored database is corrupted');
+    }
     
     return true;
   } catch (error) {

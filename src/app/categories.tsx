@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -102,6 +102,14 @@ export default function CategoriesScreen() {
   const [bookAssignModalVisible, setBookAssignModalVisible] = useState(false);
   const [expandedBookId, setExpandedBookId] = useState<number | null>(null);
 
+  // Timer cleanup refs
+  const timerRefs = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => {
+    return () => {
+      timerRefs.current.forEach(clearTimeout);
+    };
+  }, []);
+
   const getStatusText = useCallback((status: string) => {
     if (status === 'read') return t('filter_read');
     if (status === 'reading') return t('filter_reading');
@@ -110,16 +118,18 @@ export default function CategoriesScreen() {
 
   const closeCategoryDetail = () => {
     setCategoryDetailVisible(false);
-    setTimeout(() => {
+    const id = setTimeout(() => {
       setSelectedCategory(null);
     }, 400);
+    timerRefs.current.push(id);
   };
 
   const handleCloseAssignModal = () => {
     setBookAssignModalVisible(false);
-    setTimeout(() => {
+    const id = setTimeout(() => {
       setCategoryDetailVisible(true);
     }, 400);
+    timerRefs.current.push(id);
   };
 
   // Fetch categories list
@@ -227,7 +237,7 @@ export default function CategoriesScreen() {
   const openBookAssignModal = () => {
     setCategoryDetailVisible(false);
     setExpandedBookId(null);
-    setTimeout(async () => {
+    const id = setTimeout(async () => {
       try {
         const data = await getAllBooks();
         setAllBooksList(data);
@@ -236,6 +246,7 @@ export default function CategoriesScreen() {
         console.error('Error getting all books:', error);
       }
     }, 400);
+    timerRefs.current.push(id);
   };
 
   // Link / Unlink book to this category
@@ -264,13 +275,14 @@ export default function CategoriesScreen() {
     
     setCategoryDetailVisible(false);
     const catId = selectedCategory.id;
-    setTimeout(() => {
+    const id = setTimeout(() => {
       setSelectedCategory(null);
       router.push({
         pathname: '/add',
         params: { categoryId: catId }
       });
     }, 400);
+    timerRefs.current.push(id);
   };
 
   const renderCategoryCard = useCallback(({ item }: { item: Category }) => {
@@ -320,7 +332,7 @@ export default function CategoriesScreen() {
         </Text>
         <TouchableOpacity style={styles.addCategoryBtn} onPress={() => openCategoryModal(null)}>
           <Ionicons name="add" size={18} color="#FFF" />
-          <Text style={styles.addCategoryBtnText}>{language === 'tr' ? 'Kategori Ekle' : 'Add Category'}</Text>
+          <Text style={styles.addCategoryBtnText}>{language === 'tr' ? 'Kategori Ekle' : language === 'ar' ? 'إضافة قسم' : 'Add Category'}</Text>
         </TouchableOpacity>
       </View>
 
@@ -338,7 +350,7 @@ export default function CategoriesScreen() {
           <View style={styles.centerContainer}>
             <Ionicons name="grid-outline" size={64} color="#AEAEB2" />
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              {language === 'tr' ? 'Kategori bulunamadı.' : 'No categories found.'}
+              {language === 'tr' ? 'Kategori bulunamadı.' : language === 'ar' ? 'لم يتم العثور على أقسام.' : 'No categories found.'}
             </Text>
           </View>
         }
@@ -354,7 +366,7 @@ export default function CategoriesScreen() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>
-              {editingCategory ? (language === 'tr' ? 'Kategoriyi Düzenle' : 'Edit Category') : t('category_add_new')}
+              {editingCategory ? (language === 'tr' ? 'Kategoriyi Düzenle' : language === 'ar' ? 'تعديل القسم' : 'Edit Category') : t('category_add_new')}
             </Text>
 
             <TextInput
@@ -373,7 +385,7 @@ export default function CategoriesScreen() {
             />
 
             <Text style={[styles.iconPickerLabel, { color: colors.text }]}>
-              {language === 'tr' ? 'Bir Simge Seçin' : 'Select an Icon'}
+              {language === 'tr' ? 'Bir Simge Seçin' : language === 'ar' ? 'اختر أيقونة' : 'Select an Icon'}
             </Text>
             
             {/* Grid of icons */}
@@ -452,7 +464,7 @@ export default function CategoriesScreen() {
               <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.backgroundElement }]} onPress={openBookAssignModal}>
                 <Ionicons name="link-outline" size={18} color="#0A84FF" />
                 <Text style={[styles.actionBtnText, { color: colors.text }]}>
-                  {language === 'tr' ? 'Kitapları Eşleştir' : 'Match Books'}
+                  {language === 'tr' ? 'Kitapları Eşleştir' : language === 'ar' ? 'ربط الكتب' : 'Match Books'}
                 </Text>
               </TouchableOpacity>
 
@@ -498,6 +510,8 @@ export default function CategoriesScreen() {
                   <Text style={[styles.emptySub, { color: colors.textSecondary, textAlign: 'center', marginTop: 8 }]}>
                     {language === 'tr'
                       ? 'Yukarıdaki "Kitapları Eşleştir" butonu ile kütüphanenizdeki kitapları bu kategoriye ekleyebilirsiniz.'
+                      : language === 'ar'
+                      ? 'يمكنك استخدام زر "ربط الكتب" أعلاه لإضافة كتب من مكتبتك إلى هذا القسم.'
                       : 'Use the "Match Books" button above to add books to this category.'}
                   </Text>
                 </View>
@@ -519,7 +533,7 @@ export default function CategoriesScreen() {
             <View style={[styles.modalContentLarge, { backgroundColor: colors.background }]}>
               <View style={styles.modalLargeHeader}>
                 <Text style={[styles.modalLargeTitle, { color: colors.text }]}>
-                  {language === 'tr' ? 'Kitapları Eşleştir' : 'Match Books'}
+                  {language === 'tr' ? 'Kitapları Eşleştir' : language === 'ar' ? 'ربط الكتب' : 'Match Books'}
                 </Text>
                 <TouchableOpacity onPress={handleCloseAssignModal}>
                   <Ionicons name="close" size={26} color={colors.text} />
@@ -529,6 +543,8 @@ export default function CategoriesScreen() {
               <Text style={[styles.modalLargeSub, { color: colors.textSecondary }]}>
                 {language === 'tr'
                   ? `"${selectedCategory.name}" kategorisine eklemek istediğiniz kitapları işaretleyin.`
+                  : language === 'ar'
+                  ? `حدد الكتب التي ترغب في إضافتها إلى قسم "${selectedCategory.name}".`
                   : `Select the books you want to add to the "${selectedCategory.name}" category.`}
               </Text>
 
@@ -600,7 +616,7 @@ export default function CategoriesScreen() {
                               </Text>
                             ) : null}
                             <Text style={[styles.detailText, { color: colors.text, marginTop: 4 }]}>
-                              📖 {language === 'tr' ? 'Durum' : 'Status'}: {getStatusText(item.status)}
+                              📖 {language === 'tr' ? 'Durum' : language === 'ar' ? 'الحالة' : 'Status'}: {getStatusText(item.status)}
                             </Text>
                           </View>
                         </View>

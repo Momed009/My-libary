@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -47,6 +47,16 @@ export default function AddBookScreen() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [categorySelectorVisible, setCategorySelectorVisible] = useState(false);
 
+  // Timer cleanup ref
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current) {
+        clearTimeout(successTimerRef.current);
+      }
+    };
+  }, []);
+
   // Fetch categories list on mount
   const loadCategories = async () => {
     try {
@@ -74,43 +84,53 @@ export default function AddBookScreen() {
 
   // Open native camera to take a cover photo
   const handleTakePhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert(t('warning'), t('scanner_permission_req'));
-      return;
-    }
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(t('warning'), t('scanner_permission_req'));
+        return;
+      }
 
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [3, 4],
-      quality: 0.6,
-      ...(Platform.OS === 'android' && { presentationStyle: ImagePicker.UIImagePickerPresentationStyle.FULL_SCREEN }),
-    });
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [3, 4],
+        quality: 0.6,
+        ...(Platform.OS === 'android' && { presentationStyle: ImagePicker.UIImagePickerPresentationStyle.FULL_SCREEN }),
+      });
 
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      setPhotoUri(result.assets[0].uri);
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setPhotoUri(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('Error taking photo:', error);
+      Alert.alert(t('error'), language === 'tr' ? 'Kamera açılırken bir hata oluştu.' : language === 'ar' ? 'حدث خطأ أثناء فتح الكاميرا.' : 'An error occurred while opening the camera.');
     }
   };
 
   // Open gallery to select a cover photo
   const handleSelectPhoto = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert(t('warning'), t('scanner_permission_req'));
-      return;
-    }
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(t('warning'), t('scanner_permission_req'));
+        return;
+      }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [3, 4],
-      quality: 0.6,
-      ...(Platform.OS === 'android' && { presentationStyle: ImagePicker.UIImagePickerPresentationStyle.FULL_SCREEN }),
-    });
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [3, 4],
+        quality: 0.6,
+        ...(Platform.OS === 'android' && { presentationStyle: ImagePicker.UIImagePickerPresentationStyle.FULL_SCREEN }),
+      });
 
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      setPhotoUri(result.assets[0].uri);
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setPhotoUri(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('Error selecting photo:', error);
+      Alert.alert(t('error'), language === 'tr' ? 'Galeri açılırken bir hata oluştu.' : language === 'ar' ? 'حدث خطأ أثناء فتح المعرض.' : 'An error occurred while opening the gallery.');
     }
   };
 
@@ -242,9 +262,10 @@ export default function AddBookScreen() {
       setSuccessMessage(t('add_book_success'));
       resetForm();
       
-      setTimeout(() => {
+      successTimerRef.current = setTimeout(() => {
         setSuccessMessage(null);
-      }, 4000);
+        router.replace('/');
+      }, 1500);
 
     } catch (error) {
       console.error('Save book error:', error);
@@ -291,7 +312,7 @@ export default function AddBookScreen() {
         <View style={styles.dividerRow}>
           <View style={[styles.dividerLine, { backgroundColor: colorScheme === 'dark' ? '#38383A' : '#E5E5EA' }]} />
           <Text style={[styles.dividerText, { color: colors.textSecondary }]}>
-            {language === 'tr' ? 'veya elle bilgileri girin' : 'or enter details manually'}
+            {language === 'tr' ? 'veya elle bilgileri girin' : language === 'ar' ? 'أو أدخل التفاصيل يدوياً' : 'or enter details manually'}
           </Text>
           <View style={[styles.dividerLine, { backgroundColor: colorScheme === 'dark' ? '#38383A' : '#E5E5EA' }]} />
         </View>
@@ -341,7 +362,7 @@ export default function AddBookScreen() {
                 borderColor: colorScheme === 'dark' ? '#38383A' : '#D1D1D6',
               },
             ]}
-            placeholder={language === 'tr' ? 'Kitabın tam adını girin...' : 'Enter full book name...'}
+            placeholder={language === 'tr' ? 'Kitabın tam adını girin...' : language === 'ar' ? 'أدخل الاسم الكامل للكتاب...' : 'Enter full book name...'}
             placeholderTextColor="#8E8E93"
             value={title}
             onChangeText={setTitle}
@@ -358,7 +379,7 @@ export default function AddBookScreen() {
                 borderColor: colorScheme === 'dark' ? '#38383A' : '#D1D1D6',
               },
             ]}
-            placeholder={language === 'tr' ? 'Yazar adını girin...' : 'Enter author name...'}
+            placeholder={language === 'tr' ? 'Yazar adını girin...' : language === 'ar' ? 'أدخل اسم المؤلف...' : 'Enter author name...'}
             placeholderTextColor="#8E8E93"
             value={author}
             onChangeText={setAuthor}
@@ -393,7 +414,7 @@ export default function AddBookScreen() {
                 borderColor: colorScheme === 'dark' ? '#38383A' : '#D1D1D6',
               },
             ]}
-            placeholder={language === 'tr' ? 'İsteğe bağlı sayfa sayısı...' : 'Optional page count...'}
+            placeholder={language === 'tr' ? 'İsteğe bağlı sayfa sayısı...' : language === 'ar' ? 'عدد الصفحات اختياري...' : 'Optional page count...'}
             placeholderTextColor="#8E8E93"
             value={pageCount}
             onChangeText={setPageCount}
@@ -411,7 +432,7 @@ export default function AddBookScreen() {
                 borderColor: colorScheme === 'dark' ? '#38383A' : '#D1D1D6',
               },
             ]}
-            placeholder={language === 'tr' ? 'İsteğe bağlı barkod numarası...' : 'Optional barcode number...'}
+            placeholder={language === 'tr' ? 'İsteğe bağlı barkod numarası...' : language === 'ar' ? 'الرقم التسلسلي اختياري...' : 'Optional barcode number...'}
             placeholderTextColor="#8E8E93"
             value={isbn}
             onChangeText={setIsbn}
@@ -433,7 +454,7 @@ export default function AddBookScreen() {
                 onPress={resetForm}
               >
                 <Text style={[styles.btnSecondaryText, { color: colors.text }]}>
-                  {language === 'tr' ? 'Temizle' : 'Clear'}
+                  {language === 'tr' ? 'Temizle' : language === 'ar' ? 'مسح' : 'Clear'}
                 </Text>
               </TouchableOpacity>
 
@@ -469,17 +490,17 @@ export default function AddBookScreen() {
             </View>
 
             <FlatList
-              data={categories}
+              data={[{ id: -1, name: language === 'tr' ? 'Kategorisiz' : language === 'ar' ? 'بدون قسم' : 'No Category', icon: 'close-circle-outline', book_count: 0 } as Category, ...categories]}
               keyExtractor={(item) => item.id.toString()}
               renderItem={({ item }) => (
                 <TouchableOpacity
                    style={[styles.selectorListItem, { borderBottomColor: colorScheme === 'dark' ? '#38383A' : '#E5E5EA' }]}
                   onPress={() => {
-                    setCategoryId(item.id);
+                    setCategoryId(item.id === -1 ? null : item.id);
                     setCategorySelectorVisible(false);
                   }}
                 >
-                  <Text style={[styles.selectorListItemTitle, { color: colors.text }]}>{item.name}</Text>
+                  <Text style={[styles.selectorListItemTitle, { color: item.id === -1 ? '#8E8E93' : colors.text }]}>{item.name}</Text>
                 </TouchableOpacity>
               )}
             />

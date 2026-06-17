@@ -77,6 +77,7 @@ async function downloadCoverImage(remoteUrl: string, uuid: string): Promise<stri
 
 // Push local changes to Supabase
 export async function pushLocalChanges(userId: string): Promise<number> {
+  try {
   const db = getDbConnection();
   let pushCount = 0;
 
@@ -130,12 +131,17 @@ export async function pushLocalChanges(userId: string): Promise<number> {
       'SELECT uuid FROM books WHERE id = ?', lending.book_id
     );
 
+    if (!parentBook?.uuid) {
+      console.warn('Skipping lending push: parent book UUID not found for lending', lending.id);
+      continue;
+    }
+
     const { error } = await supabase
       .from('lendings')
       .upsert({
         uuid: lending.uuid,
         user_id: userId,
-        book_uuid: parentBook?.uuid || '',
+        book_uuid: parentBook.uuid,
         borrower_name: lending.borrower_name,
         borrow_date: lending.borrow_date,
         return_date: lending.return_date,
@@ -163,12 +169,17 @@ export async function pushLocalChanges(userId: string): Promise<number> {
       'SELECT uuid FROM books WHERE id = ?', quote.book_id
     );
 
+    if (!parentBook?.uuid) {
+      console.warn('Skipping quote push: parent book UUID not found for quote', quote.id);
+      continue;
+    }
+
     const { error } = await supabase
       .from('book_quotes')
       .upsert({
         uuid: quote.uuid,
         user_id: userId,
-        book_uuid: parentBook?.uuid || '',
+        book_uuid: parentBook.uuid,
         content: quote.content,
         page: quote.page,
         color_index: quote.color_index || 0,
@@ -186,10 +197,15 @@ export async function pushLocalChanges(userId: string): Promise<number> {
   }
 
   return pushCount;
+  } catch (error) {
+    console.error('Error pushing local changes:', error);
+    return 0;
+  }
 }
 
 // Pull remote changes from Supabase
 export async function pullRemoteChanges(userId: string): Promise<number> {
+  try {
   const db = getDbConnection();
   const lastSync = await getLastSyncTime();
   let pullCount = 0;
@@ -264,6 +280,10 @@ export async function pullRemoteChanges(userId: string): Promise<number> {
 
       if (localLending) {
         if (new Date(rl.updated_at) > new Date(localLending.updated_at)) {
+          if (bookId === 0) {
+            console.warn('Skipping lending update: book not found locally for lending', rl.uuid);
+            continue;
+          }
           await db.runAsync(
             `UPDATE lendings SET book_id = ?, borrower_name = ?, borrow_date = ?, return_date = ?, returned = ?, calendar_event_id = ?, updated_at = ?, is_deleted = ?, synced = 1 WHERE uuid = ?`,
             bookId, rl.borrower_name, rl.borrow_date, rl.return_date, rl.returned, rl.calendar_event_id, rl.updated_at, rl.is_deleted, rl.uuid
@@ -299,6 +319,10 @@ export async function pullRemoteChanges(userId: string): Promise<number> {
 
       if (localQuote) {
         if (new Date(rq.updated_at) > new Date(localQuote.updated_at)) {
+          if (bookId === 0) {
+            console.warn('Skipping quote update: book not found locally for quote', rq.uuid);
+            continue;
+          }
           await db.runAsync(
             `UPDATE book_quotes SET book_id = ?, content = ?, page = ?, color_index = ?, updated_at = ?, is_deleted = ?, synced = 1 WHERE uuid = ?`,
             bookId, rq.content, rq.page, rq.color_index, rq.updated_at, rq.is_deleted, rq.uuid
@@ -318,11 +342,25 @@ export async function pullRemoteChanges(userId: string): Promise<number> {
   // Update last sync timestamp
   await setLastSyncTime(new Date().toISOString());
   return pullCount;
+  } catch (error) {
+    console.error('Error pulling remote changes:', error);
+    return 0;
+  }
 }
 
 // Full sync: push then pull
 export async function performFullSync(userId: string): Promise<{ pushed: number; pulled: number }> {
-  const pushed = await pushLocalChanges(userId);
-  const pulled = await pullRemoteChanges(userId);
+  let pushed = 0;
+  let pulled = 0;
+  try {
+    pushed = await pushLocalChanges(userId);
+  } catch (error) {
+    console.error('Push failed during full sync:', error);
+  }
+  try {
+    pulled = await pullRemoteChanges(userId);
+  } catch (error) {
+    console.error('Pull failed during full sync:', error);
+  }
   return { pushed, pulled };
 }

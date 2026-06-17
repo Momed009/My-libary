@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/services/supabase';
 import { Session, User } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -25,17 +25,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authSkipped, setAuthSkippedState] = useState<boolean>(false);
 
   useEffect(() => {
-    // Load auth skipped state on mount
-    AsyncStorage.getItem(AUTH_SKIPPED_KEY).then((val) => {
-      setAuthSkippedState(val === 'true');
-    });
-
-    // Get the current session on mount
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setIsLoading(false);
-    });
+    // Load session and auth-skipped state in parallel
+    Promise.all([
+      supabase.auth.getSession().catch((err) => {
+        console.error('Error getting session:', err);
+        return { data: { session: null } };
+      }),
+      AsyncStorage.getItem(AUTH_SKIPPED_KEY).catch((err) => {
+        console.error('Error loading auth skipped state:', err);
+        return null;
+      }),
+    ])
+      .then(([sessionResult, skippedValue]) => {
+        const currentSession = sessionResult.data.session;
+        setSession(currentSession);
+        setUser(currentSession?.user ?? null);
+        setAuthSkippedState(skippedValue === 'true');
+      })
+      .catch((err) => {
+        console.error('Unexpected error during auth initialization:', err);
+        setUser(null);
+        setSession(null);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
 
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -48,12 +62,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const setAuthSkipped = async (val: boolean) => {
-    await AsyncStorage.setItem(AUTH_SKIPPED_KEY, val ? 'true' : 'false');
-    setAuthSkippedState(val);
-  };
+  const setAuthSkipped = useCallback(async (val: boolean) => {
+    try {
+      await AsyncStorage.setItem(AUTH_SKIPPED_KEY, val ? 'true' : 'false');
+      setAuthSkippedState(val);
+    } catch (err) {
+      console.error('Error saving auth skipped state:', err);
+    }
+  }, []);
 
-  const signInWithEmail = async (email: string, password: string): Promise<{ error: string | null }> => {
+  const signInWithEmail = useCallback(async (email: string, password: string): Promise<{ error: string | null }> => {
     const { error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
@@ -62,9 +80,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Clear skipped state upon successful sign in
     await setAuthSkipped(false);
     return { error: null };
-  };
+  }, [setAuthSkipped]);
 
-  const signUpWithEmail = async (email: string, password: string): Promise<{ error: string | null }> => {
+  const signUpWithEmail = useCallback(async (email: string, password: string): Promise<{ error: string | null }> => {
     const { error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
@@ -73,25 +91,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Clear skipped state upon successful sign up
     await setAuthSkipped(false);
     return { error: null };
-  };
+  }, [setAuthSkipped]);
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     // Reset skipped state to false so they see the login screen again
     await setAuthSkipped(false);
-  };
+  }, [setAuthSkipped]);
+
+  const contextValue = useMemo(() => ({
+    user,
+    session,
+    isLoading,
+    authSkipped,
+    setAuthSkipped,
+    signInWithEmail,
+    signUpWithEmail,
+    signOut,
+  }), [user, session, isLoading, authSkipped, setAuthSkipped, signInWithEmail, signUpWithEmail, signOut]);
 
   return (
-    <AuthContext.Provider value={{
-      user,
-      session,
-      isLoading,
-      authSkipped,
-      setAuthSkipped,
-      signInWithEmail,
-      signUpWithEmail,
-      signOut,
-    }}>
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );
